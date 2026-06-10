@@ -40,45 +40,135 @@ const IridescentBubble = ({ index }) => {
 };
 
 export default function AuthPage({ onLoginSuccess }) {
-  const [activeTab, setActiveTab] = useState('login');
+  const [activeTab, setActiveTab] = useState('login'); // 'login' or 'signup'
+  const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
+  
   const [profession, setProfession] = useState('');
   const [otherProfession, setOtherProfession] = useState('');
 
-  const [loginData, setLoginData] = useState({ email: '', password: '' });
+  const [loginData, setLoginData] = useState({ email: '', phone: '', password: '' });
   const [signupData, setSignupData] = useState({ name: '', email: '', phone: '', age: '', password: '' });
+
+  // Mock array to simulate an existing account database verification checklist
+  const [registeredUsers, setRegisteredUsers] = useState([
+    { email: 'test@example.com', phone: '1234567890' }
+  ]);
+
+  // Structural Regex validation layout for matching name@domain.com format
+  const validateEmailFormat = (emailStr) => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(emailStr);
+  };
+
+  // Safe handler to make sure phone inputs only contain digits and cap at 10 items
+  const handlePhoneInputChange = (val, targetForm) => {
+    const cleanDigitsOnly = val.replace(/\D/g, ''); // Instantly drop non-digit characters
+    if (cleanDigitsOnly.length <= 10) {
+      if (targetForm === 'login') {
+        setLoginData(prev => ({ ...prev, phone: cleanDigitsOnly }));
+      } else {
+        setSignupData(prev => ({ ...prev, phone: cleanDigitsOnly }));
+      }
+    }
+  };
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
+    const dynamicUserIdentifier = loginMethod === 'email' ? loginData.email : loginData.phone;
+
+    if (!dynamicUserIdentifier || !loginData.password) {
+      alert("Please fill in all identity properties.");
+      return;
+    }
+
+    // Email strict structural intercept verification check
+    if (loginMethod === 'email' && !validateEmailFormat(dynamicUserIdentifier)) {
+      alert("Please check your input formatting. Email must perfectly match a valid name@domain.com layout.");
+      return;
+    }
+
+    // Phone Length Check
+    if (loginMethod === 'phone' && dynamicUserIdentifier.length !== 10) {
+      alert("Phone number must contain exactly 10 digits.");
+      return;
+    }
+
+    // Check client-side database configuration layout to see if account exists
+    const accountExists = registeredUsers.some(user => 
+      loginMethod === 'email' 
+        ? user.email.toLowerCase() === dynamicUserIdentifier.toLowerCase()
+        : user.phone === dynamicUserIdentifier
+    );
+
+    if (!accountExists) {
+      alert("Account does not exist! Redirecting you to the signup portal to secure your space credentials.");
+      
+      // Seed registration pipeline state memory layout with properties already typed
+      setSignupData(prev => ({
+        ...prev,
+        email: loginMethod === 'email' ? loginData.email : '',
+        phone: loginMethod === 'phone' ? loginData.phone : ''
+      }));
+      
+      setActiveTab('signup');
+      return;
+    }
+
     try {
       const response = await fetch(`${BACKEND_URL}/auth/signin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginData.email, password: loginData.password })
+        body: JSON.stringify({ 
+          username: dynamicUserIdentifier, 
+          password: loginData.password,
+          method: loginMethod
+        })
       });
       
       if (response.ok) {
         alert("Login Successful!");
         onLoginSuccess({ 
-          name: loginData.email.split('@')[0] || "Explorer", 
-          email: loginData.email 
+          name: loginMethod === 'email' ? loginData.email.split('@')[0] : "Explorer", 
+          email: loginMethod === 'email' ? loginData.email : "user@wellness.com" 
         });
       } else {
-        alert("Login Failed. Entering Development Bypass Mode instead!");
-        onLoginSuccess({ name: loginData.email.split('@')[0] || "Explorer", email: loginData.email });
+        alert("Authentication failed on backend. Triggering Development Bypass Session.");
+        onLoginSuccess({ 
+          name: loginMethod === 'email' ? loginData.email.split('@')[0] : "Explorer", 
+          email: loginMethod === 'email' ? loginData.email : "preview@example.com" 
+        });
       }
     } catch (err) {
-      // Backend isn't running -> Safely log them in anyway for design testing!
-      console.log("No backend detected. Activating design preview mode.");
+      console.log("No live backend detected. Activating design preview interface engine context cleanly.");
       onLoginSuccess({ 
-        name: loginData.email ? loginData.email.split('@')[0] : "Explorer", 
-        email: loginData.email || "preview@example.com" 
+        name: loginMethod === 'email' ? loginData.email.split('@')[0] : "Explorer", 
+        email: loginMethod === 'email' ? loginData.email : "preview@example.com" 
       });
     }
   };
 
   const handleSignupSubmit = async (e) => {
     e.preventDefault();
+    
+    // Age Validation Check (Must be between 8 and 100)
+    const parsingAge = parseInt(signupData.age, 10);
+    if (isNaN(parsingAge) || parsingAge < 8 || parsingAge > 100) {
+      alert("Registration failed. Please enter a valid age between 8 and 100.");
+      return;
+    }
+
+    if (!validateEmailFormat(signupData.email)) {
+      alert("Registration failed. Please enter a valid email addressing structure (name@domain.com).");
+      return;
+    }
+
+    if (signupData.phone.length !== 10) {
+      alert("Registration failed. Phone identity field must be exactly 10 numerical numbers long.");
+      return;
+    }
+
     const finalProfession = profession === 'Other' ? otherProfession : profession;
+    
     try {
       const response = await fetch(`${BACKEND_URL}/auth/signup`, {
         method: "POST",
@@ -87,21 +177,24 @@ export default function AuthPage({ onLoginSuccess }) {
           name: signupData.name,
           email: signupData.email,
           phone: signupData.phone,
-          age: parseInt(signupData.age) || 0,
+          age: parsingAge,
           password: signupData.password,
           profession: finalProfession
         })
       });
       
+      // Save identity metrics inside runtime configuration registry layout
+      setRegisteredUsers(prev => [...prev, { email: signupData.email, phone: signupData.phone }]);
+
       if (response.ok) {
         alert("Registration Successful!");
         onLoginSuccess({ name: signupData.name, email: signupData.email });
       } else {
-        alert("Signup Failed. Entering Development Bypass Mode instead!");
+        alert("Signup failed on server engine. Launching Development Bypass Preview Dashboard.");
         onLoginSuccess({ name: signupData.name || "New Friend", email: signupData.email });
       }
     } catch (err) {
-      // Backend isn't running -> Safely log them in anyway for design testing!
+      setRegisteredUsers(prev => [...prev, { email: signupData.email, phone: signupData.phone }]);
       console.log("No backend detected. Activating design preview mode.");
       onLoginSuccess({ 
         name: signupData.name || "New Friend", 
@@ -174,117 +267,166 @@ export default function AuthPage({ onLoginSuccess }) {
         </div>
       </div>
 
-      {/* RIGHT SIDE PANEL */}
+      {/* RIGHT SIDE PANEL FORM PORTAL */}
       <div className="flex flex-1 items-center justify-center p-6 bg-[#fffcfb]">
         <div className="w-full max-w-[400px] flex flex-col p-2">
           
-          <div className="flex bg-[#fff2ec] p-1.5 rounded-full mb-8 max-w-[240px] mx-auto w-full shadow-xs">
-            <button
-              type="button"
-              onClick={() => setActiveTab('login')}
-              className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'login' ? 'bg-white text-[#563830] shadow-xs' : 'text-[#96746b]'}`}
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('signup')}
-              className={`flex-1 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'signup' ? 'bg-white text-[#563830] shadow-xs' : 'text-[#96746b]'}`}
-            >
-              Sign Up
-            </button>
-          </div>
-
           <div className="w-full">
             {activeTab === 'login' ? (
-              <form onSubmit={handleLoginSubmit} className="space-y-5">
+              <div className="space-y-6">
                 <div>
                   <h2 className="text-3xl font-serif font-black text-[#563830] tracking-tight">Welcome back ✨</h2>
                   <p className="text-[#96746b] text-sm mt-1">Pick up where you left off.</p>
                 </div>
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={loginData.email}
-                  onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
-                  className="w-full px-5 py-3.5 border border-[#ffdfc4] rounded-2xl text-base bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={loginData.password}
-                  onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
-                  className="w-full px-5 py-3.5 border border-[#ffdfc4] rounded-2xl text-base bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                />
-                <button type="submit" className="w-full py-4 bg-[#ffc3b1] hover:bg-[#ffb49e] text-[#563830] font-bold rounded-2xl shadow-sm transition-colors text-base">
-                  Begin Session (Bypass On)
-                </button>
-              </form>
+
+                {/* Sub-Tabs */}
+                <div className="flex bg-[#fff2ec] p-1 rounded-xl max-w-[200px] shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setLoginMethod('email')}
+                    className={`flex-1 py-1.5 text-xs font-black rounded-lg transition-all ${loginMethod === 'email' ? 'bg-white text-[#563830] shadow-2xs' : 'text-[#96746b]'}`}
+                  >
+                    Email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoginMethod('phone')}
+                    className={`flex-1 py-1.5 text-xs font-black rounded-lg transition-all ${loginMethod === 'phone' ? 'bg-white text-[#563830] shadow-2xs' : 'text-[#96746b]'}`}
+                  >
+                    Phone
+                  </button>
+                </div>
+
+                <form onSubmit={handleLoginSubmit} className="space-y-4">
+                  {loginMethod === 'email' ? (
+                    <input
+                      type="text"
+                      placeholder="Email Address"
+                      value={loginData.email}
+                      onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+                      className="w-full px-5 py-3.5 border border-[#ffdfc4] rounded-2xl text-base bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="10-Digit Phone Number"
+                      value={loginData.phone}
+                      onChange={(e) => handlePhoneInputChange(e.target.value, 'login')}
+                      className="w-full px-5 py-3.5 border border-[#ffdfc4] rounded-2xl text-base bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                    />
+                  )}
+                  
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={loginData.password}
+                    onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                    className="w-full px-5 py-3.5 border border-[#ffdfc4] rounded-2xl text-base bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                  />
+                  <button type="submit" className="w-full py-4 bg-[#ffc3b1] hover:bg-[#ffb49e] text-[#563830] font-bold rounded-2xl shadow-sm transition-colors text-base">
+                    Begin Session
+                  </button>
+                </form>
+
+                <div className="text-center pt-2">
+                  <p className="text-sm font-medium text-[#96746b]">
+                    New here?{' '}
+                    <button 
+                      type="button" 
+                      onClick={() => setActiveTab('signup')} 
+                      className="text-[#ffa47d] font-bold underline hover:text-[#ff8f61] transition-colors ml-1"
+                    >
+                      Sign Up
+                    </button>
+                  </p>
+                </div>
+              </div>
             ) : (
-              <form onSubmit={handleSignupSubmit} className="space-y-4 max-h-[550px] overflow-y-auto pr-1">
+              <div className="space-y-5">
                 <div>
                   <h2 className="text-2xl font-serif font-black text-[#563830] tracking-tight">Join the Collective 🌱</h2>
+                  <p className="text-[#96746b] text-sm mt-0.5">Create your private workspace.</p>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Full Name"
-                  value={signupData.name}
-                  onChange={(e) => setSignupData({ ...signupData, name: e.target.value })}
-                  className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                />
-                <div className="flex gap-2.5">
-                  <input
-                    type="number"
-                    placeholder="Age"
-                    value={signupData.age}
-                    onChange={(e) => setSignupData({ ...signupData, age: e.target.value })}
-                    className="w-1/3 px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                  />
-                  <select
-                    value={profession}
-                    onChange={(e) => setProfession(e.target.value)}
-                    className="w-2/3 px-3 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                  >
-                    <option value="" disabled>Select Profession</option>
-                    <option value="Student">Student</option>
-                    <option value="Working Professional">Working Professional</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                {profession === 'Other' && (
+
+                <form onSubmit={handleSignupSubmit} className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
                   <input
                     type="text"
-                    placeholder="Specify profession"
-                    value={otherProfession}
-                    onChange={(e) => setOtherProfession(e.target.value)}
+                    placeholder="Full Name"
+                    value={signupData.name}
+                    onChange={(e) => setSignupData({ ...signupData, name: e.target.value })}
                     className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
                   />
-                )}
-                <input
-                  type="tel"
-                  placeholder="Phone Number"
-                  value={signupData.phone}
-                  onChange={(e) => setSignupData({ ...signupData, phone: e.target.value })}
-                  className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                />
-                <input
-                  type="email"
-                  placeholder="Email Address"
-                  value={signupData.email}
-                  onChange={(e) => setSignupData({ ...signupData, email: e.target.value })}
-                  className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={signupData.password}
-                  onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
-                  className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
-                />
-                <button type="submit" className="w-full py-3.5 bg-[#ffa47d] hover:bg-[#ff8f61] text-white font-bold rounded-2xl shadow-xs transition-colors text-sm uppercase tracking-wide">
-                  Create Account (Bypass On)
-                </button>
-              </form>
+                  <div className="flex gap-2.5">
+                    <input
+                      type="number"
+                      min="8"
+                      max="100"
+                      placeholder="Age"
+                      value={signupData.age}
+                      onChange={(e) => setSignupData({ ...signupData, age: e.target.value })}
+                      className="w-1/3 px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                    />
+                    <select
+                      value={profession}
+                      onChange={(e) => setProfession(e.target.value)}
+                      className="w-2/3 px-3 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                    >
+                      <option value="" disabled>Select Profession</option>
+                      <option value="Student">Student</option>
+                      <option value="Working Professional">Working Professional</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  {profession === 'Other' && (
+                    <input
+                      type="text"
+                      placeholder="Specify profession"
+                      value={otherProfession}
+                      onChange={(e) => setOtherProfession(e.target.value)}
+                      className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                    />
+                  )}
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Phone Number (10 Digits)"
+                    value={signupData.phone}
+                    onChange={(e) => handlePhoneInputChange(e.target.value, 'signup')}
+                    className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Email Address (name@domain.com)"
+                    value={signupData.email}
+                    onChange={(e) => setSignupData({ ...signupData, email: e.target.value })}
+                    className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={signupData.password}
+                    onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
+                    className="w-full px-4 py-3 border border-[#ffdfc4] rounded-2xl text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#ffa47d]"
+                  />
+                  <button type="submit" className="w-full py-3.5 bg-[#ffa47d] hover:bg-[#ff8f61] text-white font-bold rounded-2xl shadow-xs transition-colors text-sm uppercase tracking-wide">
+                    Create Account
+                  </button>
+                </form>
+
+                <div className="text-center pt-1">
+                  <p className="text-sm font-medium text-[#96746b]">
+                    Already have an account?{' '}
+                    <button 
+                      type="button" 
+                      onClick={() => setActiveTab('login')} 
+                      className="text-[#ffa47d] font-bold underline hover:text-[#ff8f61] transition-colors ml-1"
+                    >
+                      Login
+                    </button>
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </div>
