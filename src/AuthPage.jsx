@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-
-const BACKEND_URL = "http://127.0.0.1:8000";
+import { supabase } from './supabaseClient';
 
 const IridescentBubble = ({ index }) => {
   const sizes = [150, 80, 170, 115, 95, 130];
@@ -40,8 +39,8 @@ const IridescentBubble = ({ index }) => {
 };
 
 export default function AuthPage({ onLoginSuccess }) {
-  const [activeTab, setActiveTab] = useState('login'); // 'login' or 'signup'
-  const [loginMethod, setLoginMethod] = useState('email'); // 'email' or 'phone'
+  const [activeTab, setActiveTab] = useState('login');
+  const [loginMethod, setLoginMethod] = useState('email');
   
   const [profession, setProfession] = useState('');
   const [otherProfession, setOtherProfession] = useState('');
@@ -49,20 +48,13 @@ export default function AuthPage({ onLoginSuccess }) {
   const [loginData, setLoginData] = useState({ email: '', phone: '', password: '' });
   const [signupData, setSignupData] = useState({ name: '', email: '', phone: '', age: '', password: '' });
 
-  // Mock array to simulate an existing account database verification checklist
-  const [registeredUsers, setRegisteredUsers] = useState([
-    { email: 'test@example.com', phone: '1234567890' }
-  ]);
-
-  // Structural Regex validation layout for matching name@domain.com format
   const validateEmailFormat = (emailStr) => {
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     return emailRegex.test(emailStr);
   };
 
-  // Safe handler to make sure phone inputs only contain digits and cap at 10 items
   const handlePhoneInputChange = (val, targetForm) => {
-    const cleanDigitsOnly = val.replace(/\D/g, ''); // Instantly drop non-digit characters
+    const cleanDigitsOnly = val.replace(/\D/g, '');
     if (cleanDigitsOnly.length <= 10) {
       if (targetForm === 'login') {
         setLoginData(prev => ({ ...prev, phone: cleanDigitsOnly }));
@@ -74,133 +66,94 @@ export default function AuthPage({ onLoginSuccess }) {
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    const dynamicUserIdentifier = loginMethod === 'email' ? loginData.email : loginData.phone;
+    const identifier = loginMethod === 'email' ? loginData.email : loginData.phone;
 
-    if (!dynamicUserIdentifier || !loginData.password) {
-      alert("Please fill in all identity properties.");
+    if (!identifier || !loginData.password) {
+      alert("Please fill in all fields.");
+      return;
+    }
+    if (loginMethod === 'email' && !validateEmailFormat(identifier)) {
+      alert("Please enter a valid email (name@domain.com).");
+      return;
+    }
+    if (loginMethod === 'phone' && identifier.length !== 10) {
+      alert("Phone number must be exactly 10 digits.");
       return;
     }
 
-    // Email strict structural intercept verification check
-    if (loginMethod === 'email' && !validateEmailFormat(dynamicUserIdentifier)) {
-      alert("Please check your input formatting. Email must perfectly match a valid name@domain.com layout.");
-      return;
-    }
+    const column = loginMethod === 'email' ? 'email' : 'phone';
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq(column, identifier)
+      .single();
 
-    // Phone Length Check
-    if (loginMethod === 'phone' && dynamicUserIdentifier.length !== 10) {
-      alert("Phone number must contain exactly 10 digits.");
-      return;
-    }
-
-    // Check client-side database configuration layout to see if account exists
-    const accountExists = registeredUsers.some(user => 
-      loginMethod === 'email' 
-        ? user.email.toLowerCase() === dynamicUserIdentifier.toLowerCase()
-        : user.phone === dynamicUserIdentifier
-    );
-
-    if (!accountExists) {
-      alert("Account does not exist! Redirecting you to the signup portal to secure your space credentials.");
-      
-      // Seed registration pipeline state memory layout with properties already typed
+    if (error || !user) {
       setSignupData(prev => ({
         ...prev,
         email: loginMethod === 'email' ? loginData.email : '',
-        phone: loginMethod === 'phone' ? loginData.phone : ''
+        phone: loginMethod === 'phone' ? loginData.phone : '',
       }));
-      
+      alert("No account found. Please sign up.");
       setActiveTab('signup');
       return;
     }
 
-    try {
-      const response = await fetch(`${BACKEND_URL}/auth/signin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          username: dynamicUserIdentifier, 
-          password: loginData.password,
-          method: loginMethod
-        })
-      });
-      
-      if (response.ok) {
-        alert("Login Successful!");
-        onLoginSuccess({ 
-          name: loginMethod === 'email' ? loginData.email.split('@')[0] : "Explorer", 
-          email: loginMethod === 'email' ? loginData.email : "user@wellness.com" 
-        });
-      } else {
-        alert("Authentication failed on backend. Triggering Development Bypass Session.");
-        onLoginSuccess({ 
-          name: loginMethod === 'email' ? loginData.email.split('@')[0] : "Explorer", 
-          email: loginMethod === 'email' ? loginData.email : "preview@example.com" 
-        });
-      }
-    } catch (err) {
-      console.log("No live backend detected. Activating design preview interface engine context cleanly.");
-      onLoginSuccess({ 
-        name: loginMethod === 'email' ? loginData.email.split('@')[0] : "Explorer", 
-        email: loginMethod === 'email' ? loginData.email : "preview@example.com" 
-      });
+    if (user.password !== loginData.password) {
+      alert("Wrong password. Please try again.");
+      return;
     }
+
+    onLoginSuccess({ name: user.name, email: user.email });
   };
 
   const handleSignupSubmit = async (e) => {
     e.preventDefault();
-    
-    // Age Validation Check (Must be between 8 and 100)
-    const parsingAge = parseInt(signupData.age, 10);
-    if (isNaN(parsingAge) || parsingAge < 8 || parsingAge > 100) {
-      alert("Registration failed. Please enter a valid age between 8 and 100.");
+
+    const parsedAge = parseInt(signupData.age, 10);
+    if (isNaN(parsedAge) || parsedAge < 8 || parsedAge > 100) {
+      alert("Please enter a valid age between 8 and 100.");
       return;
     }
-
     if (!validateEmailFormat(signupData.email)) {
-      alert("Registration failed. Please enter a valid email addressing structure (name@domain.com).");
+      alert("Please enter a valid email (name@domain.com).");
       return;
     }
-
     if (signupData.phone.length !== 10) {
-      alert("Registration failed. Phone identity field must be exactly 10 numerical numbers long.");
+      alert("Phone number must be exactly 10 digits.");
+      return;
+    }
+    if (!signupData.name || !signupData.password) {
+      alert("Please fill in all fields.");
       return;
     }
 
     const finalProfession = profession === 'Other' ? otherProfession : profession;
-    
-    try {
-      const response = await fetch(`${BACKEND_URL}/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: signupData.name,
-          email: signupData.email,
-          phone: signupData.phone,
-          age: parsingAge,
-          password: signupData.password,
-          profession: finalProfession
-        })
-      });
-      
-      // Save identity metrics inside runtime configuration registry layout
-      setRegisteredUsers(prev => [...prev, { email: signupData.email, phone: signupData.phone }]);
 
-      if (response.ok) {
-        alert("Registration Successful!");
-        onLoginSuccess({ name: signupData.name, email: signupData.email });
+    const { data, error } = await supabase
+      .from('users')
+      .insert([{
+        name: signupData.name,
+        email: signupData.email,
+        phone: signupData.phone,
+        age: parsedAge,
+        password: signupData.password,
+        profession: finalProfession,
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        alert("An account with this email or phone already exists. Please log in.");
+        setActiveTab('login');
       } else {
-        alert("Signup failed on server engine. Launching Development Bypass Preview Dashboard.");
-        onLoginSuccess({ name: signupData.name || "New Friend", email: signupData.email });
+        alert("Signup failed: " + error.message);
       }
-    } catch (err) {
-      setRegisteredUsers(prev => [...prev, { email: signupData.email, phone: signupData.phone }]);
-      console.log("No backend detected. Activating design preview mode.");
-      onLoginSuccess({ 
-        name: signupData.name || "New Friend", 
-        email: signupData.email || "preview@example.com" 
-      });
+      return;
     }
+
+    onLoginSuccess({ name: data.name, email: data.email });
   };
 
   return (
@@ -267,7 +220,7 @@ export default function AuthPage({ onLoginSuccess }) {
         </div>
       </div>
 
-      {/* RIGHT SIDE PANEL FORM PORTAL */}
+      {/* RIGHT SIDE PANEL */}
       <div className="flex flex-1 items-center justify-center p-6 bg-[#fffcfb]">
         <div className="w-full max-w-[400px] flex flex-col p-2">
           
@@ -279,7 +232,6 @@ export default function AuthPage({ onLoginSuccess }) {
                   <p className="text-[#96746b] text-sm mt-1">Pick up where you left off.</p>
                 </div>
 
-                {/* Sub-Tabs */}
                 <div className="flex bg-[#fff2ec] p-1 rounded-xl max-w-[200px] shadow-2xs">
                   <button
                     type="button"
