@@ -3,10 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 const BACKEND_URL = "http://127.0.0.1:8000";
 
 const REACTION_OPTIONS = [
-  { emoji: '🌸', label: 'Gentle' },
   { emoji: '💛', label: 'Warm' },
   { emoji: '✨', label: 'Helpful' },
-  { emoji: '🌿', label: 'Calming' },
   { emoji: '🫂', label: 'Felt seen' },
   { emoji: '💙', label: 'Thank you' },
 ];

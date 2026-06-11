@@ -1,0 +1,31 @@
+/* Custom Keyframe Animations */
+@keyframes rabbitJump {
+  0%   { transform: translateY(0px) scaleY(1) scaleX(1); }
+  20%  { transform: translateY(0px) scaleY(0.8) scaleX(1.15); }
+  45%  { transform: translateY(-28px) scaleY(1.1) scaleX(0.92); }
+  65%  { transform: translateY(-28px) scaleY(1.1) scaleX(0.92); }
+  85%  { transform: translateY(0px) scaleY(0.85) scaleX(1.12); }
+  100% { transform: translateY(0px) scaleY(1) scaleX(1); }
+}
+
+@keyframes wave {
+  0%   { transform: rotate(0deg); }
+  25%  { transform: rotate(-40deg); }
+  75%  { transform: rotate(12deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes shadowPulse {
+  0%, 100% { transform: scaleX(1); opacity: 0.25; }
+  45%, 65% { transform: scaleX(0.5); opacity: 0.1; }
+  85%      { transform: scaleX(1.1); opacity: 0.3; }
+}
+
+/* Helper Class Utilities */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
