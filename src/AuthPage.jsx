@@ -384,7 +384,7 @@ export default function AuthPage({ onLoginSuccess }) {
         </div>
 
         <div className="text-center z-20 max-w-md my-4">
-          <h1 className="text-4xl font-serif font-black text-[#563830] tracking-tight mb-2">Wellness Collective</h1>
+          <h1 className="text-4xl font-serif font-black text-[#563830] tracking-tight mb-2">myBuddy</h1>
           <p className="text-[#96746b] font-medium text-base">A gentle space, just for you.</p>
         </div>
 
