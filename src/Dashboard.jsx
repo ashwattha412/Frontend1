@@ -9,10 +9,10 @@ const COL_USER_ID    = 'ADD_USER_ID_COL_LATER';   // e.g. 'user_id'
 // ───────────────────────────────────────────────────────────────────────────
 
 const REACTION_OPTIONS = [
-  { emoji: '💛', label: 'Warm' },
-  { emoji: '✨', label: 'Helpful' },
-  { emoji: '🫂', label: 'Felt seen' },
-  { emoji: '💙', label: 'Thank you' },
+  { emoji: "💛", label: "Warm" },
+  { emoji: "✨", label: "Helpful" },
+  { emoji: "🫂", label: "Felt seen" },
+  { emoji: "💙", label: "Thank you" },
 ];
 
 const RabbitSVG = ({ phase, size = 144 }) => (
@@ -421,7 +421,7 @@ export default function Dashboard({ user, onLogout }) {
     const userMsg = { id: Date.now(), text: input, isBot: false, reaction: null };
     setMessages(prev => [...prev, userMsg]);
     const currentInput = input;
-    setInput('');
+    setInput("");
     setIsTyping(true);
     try {
       const history = messages.map(m => ({ role: m.isBot ? 'assistant' : 'user', content: m.text }));
@@ -468,8 +468,8 @@ export default function Dashboard({ user, onLogout }) {
       onClick={() => { setView(id); if (window.innerWidth < 768) setSidebarOpen(false); }}
       className={`w-full py-3 px-4 rounded-xl border-2 font-bold text-sm transition-all flex items-center gap-3 ${
         view === id
-          ? 'bg-[#ffcaa9] text-[#563830] border-[#4a5d55] shadow-[3px_3px_0px_#4a5d55] -translate-y-0.5'
-          : 'bg-white text-[#718a80] border-[#c2d6ce] hover:border-[#4a5d55] active:scale-95'
+          ? "bg-[#ffcaa9] text-[#563830] border-[#4a5d55] shadow-[3px_3px_0px_#4a5d55] -translate-y-0.5"
+          : "bg-white text-[#718a80] border-[#c2d6ce] hover:border-[#4a5d55] active:scale-95"
       }`}
     >
       <span>{icon}</span>
@@ -479,7 +479,6 @@ export default function Dashboard({ user, onLogout }) {
 
   return (
     <div className="flex h-screen w-full bg-[#fdfaf2] overflow-hidden text-slate-700 font-sans">
-
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/30 z-20 md:hidden" onClick={() => setSidebarOpen(false)} />
@@ -592,7 +591,11 @@ export default function Dashboard({ user, onLogout }) {
             </svg>
           </button>
           <span className="font-serif font-black text-[#563830] text-base">
-            {view === 'chat' ? '💬 Companion' : view === 'breathing' ? '🌬️ Breathe' : '📓 Journal'}
+            {view === "chat"
+              ? "💬 Companion"
+              : view === "breathing"
+                ? "🌬️ Breathe"
+                : "📓 Journal"}
           </span>
           {/* Profile avatar + dropdown */}
           <div className="relative" ref={profileRef}>
@@ -655,7 +658,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
 
         {/* ── VIEW: CHAT ── */}
-        {view === 'chat' && (
+        {view === "chat" && (
           <div className="flex-1 flex flex-col h-full overflow-hidden relative">
             {!welcomeComplete && (
               <div className="absolute inset-0 bg-[#fffbf7] z-50 flex flex-col items-center justify-center gap-6 p-6">
@@ -715,17 +718,19 @@ export default function Dashboard({ user, onLogout }) {
                     <div className="w-8 h-8 rounded-full bg-[#fcd3c1] border-2 border-[#4a5d55] flex-shrink-0 flex items-center justify-center text-sm select-none">🐰</div>
                   )}
                   <div className="relative max-w-[78%] md:max-w-[65%]">
-                    <div className={`p-3.5 rounded-2xl border-2 border-[#4a5d55] text-sm font-medium leading-relaxed relative ${
-                      msg.isBot
-                        ? 'bg-white text-[#3d2e2a] shadow-[2px_2px_0px_#4a5d55] rounded-bl-none'
-                        : 'bg-[#ffcaa9] text-[#3d2e2a] shadow-[-2px_2px_0px_#4a5d55] rounded-br-none'
-                    }`}>
+                    <div
+                      className={`p-3.5 rounded-2xl border-2 border-[#4a5d55] text-sm font-medium leading-relaxed relative ${
+                        msg.isBot
+                          ? "bg-white text-[#3d2e2a] shadow-[2px_2px_0px_#4a5d55] rounded-bl-none"
+                          : "bg-[#ffcaa9] text-[#3d2e2a] shadow-[-2px_2px_0px_#4a5d55] rounded-br-none"
+                      }`}
+                    >
                       {msg.text}
                     </div>
                     {msg.reaction && (
                       <button
                         onClick={() => handleReaction(msg.id, msg.reaction)}
-                        className={`absolute -bottom-3 ${msg.isBot ? '-right-2' : '-left-2'} bg-white border-2 border-[#4a5d55] rounded-full px-2 py-0.5 text-xs shadow-sm z-10 hover:scale-110 transition-transform`}
+                        className={`absolute -bottom-3 ${msg.isBot ? "-right-2" : "-left-2"} bg-white border-2 border-[#4a5d55] rounded-full px-2 py-0.5 text-xs shadow-sm z-10 hover:scale-110 transition-transform`}
                       >
                         {msg.reaction}
                       </button>
@@ -749,7 +754,9 @@ export default function Dashboard({ user, onLogout }) {
                               }`}
                             >
                               <span className="text-xl">{emoji}</span>
-                              <span className="text-[10px] font-bold text-[#4a5d55]">{label}</span>
+                              <span className="text-[10px] font-bold text-[#4a5d55]">
+                                {label}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -799,7 +806,7 @@ export default function Dashboard({ user, onLogout }) {
         )}
 
         {/* ── VIEW: BREATHING ── */}
-        {view === 'breathing' && (
+        {view === "breathing" && (
           <div
             className="flex-1 flex flex-col items-center justify-center p-6 text-center transition-colors duration-1000"
             style={{ background:`linear-gradient(to bottom, #fffbf7, ${phaseColors[breathPhase]?.bg || '#fffbf7'})` }}
@@ -854,7 +861,7 @@ export default function Dashboard({ user, onLogout }) {
                   className="px-7 py-3 font-black text-sm uppercase tracking-wider rounded-xl border-2 border-[#4a5d55] shadow-[3px_3px_0px_#2c3a34] active:translate-y-0.5 active:shadow-[1px_1px_0px_#2c3a34] transition-all"
                   style={{ background: breathActive ? '#fceade' : '#4a5d55', color: breathActive ? '#563830' : 'white' }}
                 >
-                  {breathActive ? 'Pause' : 'Start'}
+                  {breathActive ? "Pause" : "Start"}
                 </button>
                 {breathActive && (
                   <button
