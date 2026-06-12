@@ -1,6 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { supabase } from './supabaseClient';
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+// ─── REPLACE WITH YOUR ACTUAL TABLE/COLUMN NAMES ───────────────────────────
+const JOURNAL_TABLE  = 'ADD_TABLE_NAME_LATER';
+const COL_DATE       = 'ADD_DATE_COLUMN_LATER';   // e.g. 'entry_date'  (text or date)
+const COL_TEXT       = 'ADD_TEXT_COLUMN_LATER';   // e.g. 'body'
+const COL_USER_ID    = 'ADD_USER_ID_COL_LATER';   // e.g. 'user_id'
+// ───────────────────────────────────────────────────────────────────────────
 
 const REACTION_OPTIONS = [
   { emoji: '💛', label: 'Warm' },
@@ -11,208 +17,463 @@ const REACTION_OPTIONS = [
 
 const RabbitSVG = ({ phase, size = 144 }) => (
   <svg width={size} height={size} viewBox="0 0 200 200" fill="none">
-    <ellipse cx="72" cy="40" rx="15" ry="38" fill="#fcd3c1" />
-    <ellipse cx="72" cy="44" rx="8" ry="24" fill="#ffb499" />
-    <ellipse cx="128" cy="40" rx="15" ry="38" fill="#fcd3c1" />
-    <ellipse cx="128" cy="44" rx="8" ry="24" fill="#ffb499" />
-    <circle cx="100" cy="110" r="44" fill="#fcd3c1" />
-    <circle cx="100" cy="116" r="26" fill="#fff9f6" />
-    <circle cx="73" cy="105" r="8" fill="#ffa280" opacity="0.5" />
-    <circle cx="127" cy="105" r="8" fill="#ffa280" opacity="0.5" />
-    <circle cx="82" cy="102" r="5" fill="#4a332d" />
-    <circle cx="118" cy="102" r="5" fill="#4a332d" />
-    <circle cx="84" cy="100" r="1.5" fill="white" />
-    <circle cx="120" cy="100" r="1.5" fill="white" />
-    {phase === 'Inhale' && (
-      <circle cx="100" cy="116" r="5" fill="#4a332d" />
-    )}
-    {phase === 'Hold' && (
-      <line x1="93" y1="116" x2="107" y2="116" stroke="#4a332d" strokeWidth="3" strokeLinecap="round" />
-    )}
-    {phase === 'Exhale' && (
-      <path d="M 94 113 Q 100 123 106 113" stroke="#4a332d" strokeWidth="3" strokeLinecap="round" fill="none" />
-    )}
+    <ellipse cx="72"  cy="40"  rx="15" ry="38" fill="#fcd3c1" />
+    <ellipse cx="72"  cy="44"  rx="8"  ry="24" fill="#ffb499" />
+    <ellipse cx="128" cy="40"  rx="15" ry="38" fill="#fcd3c1" />
+    <ellipse cx="128" cy="44"  rx="8"  ry="24" fill="#ffb499" />
+    <circle  cx="100" cy="110" r="44"           fill="#fcd3c1" />
+    <circle  cx="100" cy="116" r="26"           fill="#fff9f6" />
+    <circle  cx="73"  cy="105" r="8"  fill="#ffa280" opacity="0.5" />
+    <circle  cx="127" cy="105" r="8"  fill="#ffa280" opacity="0.5" />
+    <circle  cx="82"  cy="102" r="5"            fill="#4a332d" />
+    <circle  cx="118" cy="102" r="5"            fill="#4a332d" />
+    <circle  cx="84"  cy="100" r="1.5"          fill="white"   />
+    <circle  cx="120" cy="100" r="1.5"          fill="white"   />
+    {phase === 'Inhale' && <circle cx="100" cy="116" r="5" fill="#4a332d" />}
+    {phase === 'Hold'   && <line x1="93" y1="116" x2="107" y2="116" stroke="#4a332d" strokeWidth="3" strokeLinecap="round" />}
+    {phase === 'Exhale' && <path d="M 94 113 Q 100 123 106 113" stroke="#4a332d" strokeWidth="3" strokeLinecap="round" fill="none" />}
   </svg>
 );
 
-export default function Dashboard({ user, onLogout }) {
-  const [view, setView] = useState('chat');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+// ─── CALENDAR + DIARY JOURNAL ────────────────────────────────────────────────
+function JournalView({ user }) {
+  const today = new Date();
+  const [calYear,  setCalYear]  = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());   // 0-indexed
+  const [entries,  setEntries]  = useState({});   // { 'YYYY-MM-DD': { id, text } }
+  const [selected, setSelected] = useState(toDateStr(today));
+  const [draft,    setDraft]    = useState('');
+  const [saving,   setSaving]   = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [loading,  setLoading]  = useState(true);
+  const textRef = useRef(null);
 
-  // Chat states
-  const [messages, setMessages] = useState([
+  function toDateStr(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  // Load all entries for this user
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from(JOURNAL_TABLE)
+          .select(`id, ${COL_DATE}, ${COL_TEXT}`)
+          .eq(COL_USER_ID, user?.id ?? '');
+        if (!error && data) {
+          const map = {};
+          data.forEach(row => { map[row[COL_DATE]] = { id: row.id, text: row[COL_TEXT] }; });
+          setEntries(map);
+          if (map[selected]) setDraft(map[selected].text);
+        }
+      } catch (_) {}
+      setLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // When selected date changes, load its text
+  useEffect(() => {
+    setDraft(entries[selected]?.text ?? '');
+    setTimeout(() => textRef.current?.focus(), 80);
+  }, [selected, entries]);
+
+  const handleSave = async () => {
+    if (!draft.trim()) return;
+    setSaving(true);
+    try {
+      const existing = entries[selected];
+      let error;
+      if (existing?.id) {
+        ({ error } = await supabase
+          .from(JOURNAL_TABLE)
+          .update({ [COL_TEXT]: draft })
+          .eq('id', existing.id));
+      } else {
+        const insertPayload = {
+          [COL_DATE]:    selected,
+          [COL_TEXT]:    draft,
+          [COL_USER_ID]: user?.id ?? '',
+        };
+        const { data, error: e } = await supabase
+          .from(JOURNAL_TABLE)
+          .insert([insertPayload])
+          .select();
+        error = e;
+        if (!e && data?.[0]) {
+          setEntries(prev => ({ ...prev, [selected]: { id: data[0].id, text: draft } }));
+        }
+      }
+      if (!error) {
+        setEntries(prev => ({ ...prev, [selected]: { ...(prev[selected] ?? {}), text: draft } }));
+        setSavedFlash(true);
+        setTimeout(() => setSavedFlash(false), 2200);
+      }
+    } catch (_) {}
+    setSaving(false);
+  };
+
+  // Calendar helpers
+  const daysInMonth  = new Date(calYear, calMonth + 1, 0).getDate();
+  const firstWeekday = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+  const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+
+  const prevMonth = () => {
+    if (calMonth === 0) { setCalMonth(11); setCalYear(y => y-1); }
+    else setCalMonth(m => m-1);
+  };
+  const nextMonth = () => {
+    if (calMonth === 11) { setCalMonth(0); setCalYear(y => y+1); }
+    else setCalMonth(m => m+1);
+  };
+
+  const cellDate = (day) => `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  const isToday  = (d) => cellDate(d) === toDateStr(today);
+  const isSelected = (d) => cellDate(d) === selected;
+  const hasEntry = (d) => !!entries[cellDate(d)]?.text;
+
+  const selectedDateObj = new Date(selected + 'T12:00:00');
+  const friendlyDate    = selectedDateObj.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  const wordCount       = draft.trim() ? draft.trim().split(/\s+/).length : 0;
+  const isFuture        = selected > toDateStr(today);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 md:p-6">
+      <div className="max-w-2xl mx-auto space-y-5">
+
+        {/* Header */}
+        <div>
+          <h2 className="text-2xl font-serif font-black text-[#563830]">Mood Journal 📓</h2>
+          <p className="text-sm text-[#718a80] mt-0.5">Tap a day to read or write. Every entry is yours alone.</p>
+        </div>
+
+        {/* Calendar card — compact & aesthetic */}
+        <div className="bg-white border-2 border-[#4a5d55] rounded-2xl shadow-[3px_3px_0px_#4a5d55] overflow-hidden">
+          {/* Month nav strip */}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-[#4a5d55]">
+            <button onClick={prevMonth} className="w-6 h-6 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-white font-black text-sm transition-all active:scale-90">‹</button>
+            <div className="text-center">
+              <span className="font-serif font-black text-white text-sm tracking-wide">{MONTHS[calMonth]}</span>
+              <span className="text-white/60 text-xs font-semibold ml-1.5">{calYear}</span>
+            </div>
+            <button onClick={nextMonth} className="w-6 h-6 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-white font-black text-sm transition-all active:scale-90">›</button>
+          </div>
+
+          <div className="px-3 py-2.5">
+            {/* Weekday headers */}
+            <div className="grid grid-cols-7 mb-1">
+              {DAYS.map(d => (
+                <div key={d} className="text-center text-[9px] font-black text-[#a8bdb5] uppercase tracking-wider py-0.5">{d}</div>
+              ))}
+            </div>
+
+            {/* Day cells — compact */}
+            <div className="grid grid-cols-7 gap-0.5">
+              {Array.from({ length: firstWeekday }).map((_, i) => <div key={`e${i}`} />)}
+              {Array.from({ length: daysInMonth }, (_, i) => i+1).map(day => {
+                const ds = cellDate(day);
+                const future = ds > toDateStr(today);
+                return (
+                  <button
+                    key={day}
+                    disabled={future}
+                    onClick={() => setSelected(ds)}
+                    className={`
+                      relative flex flex-col items-center justify-center rounded-lg text-[11px] font-bold transition-all
+                      h-8
+                      ${future ? 'opacity-20 cursor-not-allowed text-[#718a80]' : 'cursor-pointer'}
+                      ${isSelected(day) ? 'bg-[#4a5d55] text-white shadow-[1px_1px_0px_#2c3a34]' :
+                        isToday(day)    ? 'bg-[#ffcaa9] text-[#563830] font-black' :
+                        !future         ? 'text-[#563830] hover:bg-[#f0f7f3]' : ''}
+                    `}
+                  >
+                    {day}
+                    {hasEntry(day) && (
+                      <span className={`absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${isSelected(day) ? 'bg-[#ffcaa9]' : 'bg-[#4a5d55]'}`} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tiny legend */}
+            <div className="flex gap-3 mt-2 pt-2 border-t border-[#f0f7f3]">
+              <div className="flex items-center gap-1 text-[9px] text-[#a8bdb5] font-semibold">
+                <span className="w-2.5 h-2.5 rounded bg-[#ffcaa9] inline-block" /> Today
+              </div>
+              <div className="flex items-center gap-1 text-[9px] text-[#a8bdb5] font-semibold">
+                <span className="w-2.5 h-2.5 rounded bg-[#4a5d55] inline-block" /> Selected
+              </div>
+              <div className="flex items-center gap-1 text-[9px] text-[#a8bdb5] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#4a5d55] inline-block" /> Entry
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Entry editor */}
+        <div className="bg-white border-2 border-[#4a5d55] rounded-2xl shadow-[3px_3px_0px_#4a5d55] overflow-hidden">
+          {/* Entry header — looks like a diary page top */}
+          <div className="bg-[#e2efe9] px-5 py-3 border-b-2 border-[#4a5d55] flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-[#718a80]">
+                {entries[selected] ? (selected === toDateStr(today) ? '✏️ Today\'s entry' : '📖 Past entry') : '🌱 New entry'}
+              </p>
+              <p className="font-serif font-black text-sm text-[#563830] mt-0.5">{friendlyDate}</p>
+            </div>
+            {loading && <div className="text-xs text-[#718a80] animate-pulse">Loading…</div>}
+          </div>
+
+          {/* Ruled lines effect */}
+          <div className="relative px-5 pt-4 pb-3"
+            style={{
+              backgroundImage: 'repeating-linear-gradient(transparent, transparent 31px, #e2efe9 31px, #e2efe9 32px)',
+              backgroundPosition: '0 8px',
+            }}
+          >
+            <textarea
+              ref={textRef}
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              disabled={isFuture}
+              placeholder={isFuture ? '' : "What's stirring inside you today? There's no right way to write here…"}
+              className="w-full min-h-[200px] bg-transparent outline-none font-medium text-sm leading-8 resize-none text-[#3d2e2a] placeholder-[#c2b8b0] relative z-10"
+              style={{ lineHeight: '32px' }}
+            />
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 pb-4 flex items-center justify-between border-t border-[#e2efe9] pt-3">
+            <p className="text-xs text-[#718a80] font-medium">
+              {isFuture ? 'Future pages are blank 🌙' :
+               wordCount > 0 ? `${wordCount} word${wordCount !== 1 ? 's' : ''}` :
+               'Just start, it gets easier'}
+            </p>
+            {!isFuture && (
+              <button
+                onClick={handleSave}
+                disabled={!draft.trim() || saving}
+                className={`px-5 py-2 font-black text-xs uppercase tracking-wider rounded-xl border-2 transition-all active:scale-95 disabled:opacity-40
+                  ${savedFlash
+                    ? 'bg-[#e2efe9] border-[#4a5d55] text-[#4a5d55]'
+                    : 'bg-[#4a5d55] border-[#4a5d55] text-white shadow-[2px_2px_0px_#2c3a34] active:shadow-none'}`}
+              >
+                {saving ? '…' : savedFlash ? '✓ Saved' : entries[selected] ? 'Update Entry' : 'Save Entry'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Past entries quick list (current month only) */}
+        {Object.keys(entries).filter(d => d.startsWith(`${calYear}-${String(calMonth+1).padStart(2,'0')}`)).length > 0 && (
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#718a80] mb-2.5">This month's entries</h3>
+            <div className="space-y-2">
+              {Object.entries(entries)
+                .filter(([d, v]) => d.startsWith(`${calYear}-${String(calMonth+1).padStart(2,'0')}`) && v.text)
+                .sort(([a],[b]) => b.localeCompare(a))
+                .map(([d, v]) => {
+                  const obj = new Date(d + 'T12:00:00');
+                  const label = d === toDateStr(today) ? 'Today' :
+                    d === toDateStr(new Date(today - 86400000)) ? 'Yesterday' :
+                    obj.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => {
+                        setSelected(d);
+                        setCalMonth(obj.getMonth());
+                        setCalYear(obj.getFullYear());
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className={`w-full text-left bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.99]
+                        ${selected === d ? 'border-[#4a5d55] shadow-[2px_2px_0px_#4a5d55]' : 'border-[#c2d6ce] hover:border-[#4a5d55]'}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-black text-[#718a80]">{label}</span>
+                        <span className="text-[10px] text-[#a8bdb5] font-semibold">{v.text.trim().split(/\s+/).length} words</span>
+                      </div>
+                      <p className="text-sm text-[#563830] font-medium leading-relaxed line-clamp-2">{v.text}</p>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN DASHBOARD ─────────────────────────────────────────────────────────
+export default function Dashboard({ user, onLogout }) {
+  const [view,        setView]        = useState('chat');
+  const [sidebarOpen, setSidebarOpen] = useState(true);   // desktop default: open
+  const [sidebarWidth,setSidebarWidth]= useState(280);    // px, resizable
+
+  // Drag-to-resize
+  const isResizing   = useRef(false);
+  const startX       = useRef(0);
+  const startWidth   = useRef(0);
+  const MIN_WIDTH    = 200;
+  const MAX_WIDTH    = 420;
+
+  const onMouseDownResize = useCallback((e) => {
+    isResizing.current = true;
+    startX.current     = e.clientX;
+    startWidth.current = sidebarWidth;
+    document.body.style.userSelect    = 'none';
+    document.body.style.cursor        = 'col-resize';
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isResizing.current) return;
+      const delta = e.clientX - startX.current;
+      setSidebarWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth.current + delta)));
+    };
+    const onUp = () => {
+      isResizing.current = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor     = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  const [messages,        setMessages]        = useState([
     { id: 1, text: "Hello there I'm your wellness companion. How is your mind feeling today?", isBot: true, reaction: null }
   ]);
-  const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [activeReactionId, setActiveReactionId] = useState(null);
+  const [input,           setInput]           = useState('');
+  const [isTyping,        setIsTyping]        = useState(false);
+  const [activeReactionId,setActiveReactionId]= useState(null);
   const messagesEndRef = useRef(null);
-  const reactionRef = useRef(null);
+  const reactionRef    = useRef(null);
 
-  // Door entrance animation
-  const [doorOpen, setDoorOpen] = useState(false);
-  const [welcomeComplete, setWelcomeComplete] = useState(false);
-  const [rabbitWaving, setRabbitWaving] = useState(false);
+  const [doorOpen,       setDoorOpen]       = useState(false);
+  const [welcomeComplete,setWelcomeComplete]= useState(false);
+  const [rabbitWaving,   setRabbitWaving]   = useState(false);
 
-  // Breathing states
-  const [breathPhase, setBreathPhase] = useState('Inhale');
-  const [counter, setCounter] = useState(4);
-  const [breathScale, setBreathScale] = useState(1.0);
-  const [breathActive, setBreathActive] = useState(false);
-  const [cycleCount, setCycleCount] = useState(0);
+  const [profileOpen,  setProfileOpen]  = useState(false);
+  const profileRef = useRef(null);
 
-  // Scroll chat to bottom
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
-
-  // Close reaction picker on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (reactionRef.current && !reactionRef.current.contains(e.target)) {
-        setActiveReactionId(null);
-      }
+      if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false);
     };
     document.addEventListener('mousedown', handler);
     document.addEventListener('touchstart', handler);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('touchstart', handler);
-    };
+    return () => { document.removeEventListener('mousedown', handler); document.removeEventListener('touchstart', handler); };
   }, []);
 
-  // Door entrance animation — triggers once on mount
+  const [breathPhase,  setBreathPhase]  = useState('Inhale');
+  const [counter,      setCounter]      = useState(4);
+  const [breathScale,  setBreathScale]  = useState(1.0);
+  const [breathActive, setBreathActive] = useState(false);
+  const [cycleCount,   setCycleCount]   = useState(0);
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages, isTyping]);
+
   useEffect(() => {
-    const doorTimer = setTimeout(() => setDoorOpen(true), 500);
-    const waveTimer = setTimeout(() => setRabbitWaving(true), 1800);
-    const doneTimer = setTimeout(() => setWelcomeComplete(true), 3400);
-    return () => {
-      clearTimeout(doorTimer);
-      clearTimeout(waveTimer);
-      clearTimeout(doneTimer);
+    const handler = (e) => {
+      if (reactionRef.current && !reactionRef.current.contains(e.target)) setActiveReactionId(null);
     };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler);
+    return () => { document.removeEventListener('mousedown', handler); document.removeEventListener('touchstart', handler); };
   }, []);
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setDoorOpen(true),       500);
+    const t2 = setTimeout(() => setRabbitWaving(true),  1800);
+    const t3 = setTimeout(() => setWelcomeComplete(true),3400);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
+
   useEffect(() => {
     if (view !== 'breathing' || !breathActive) return;
-
-    let localPhase = 'Inhale';
-    let localCounter = 4;
-
-    setBreathPhase('Inhale');
-    setCounter(4);
-    setBreathScale(1.35);
-
-    const interval = setInterval(() => {
-      localCounter -= 1;
-
-      if (localCounter <= 0) {
-        if (localPhase === 'Inhale') {
-          localPhase = 'Hold';
-          setBreathPhase('Hold');
-          // scale stays at 1.35 — Hold transition is 'none' so it freezes
-        } else if (localPhase === 'Hold') {
-          localPhase = 'Exhale';
-          setBreathPhase('Exhale');
-          setBreathScale(1.0);
-        } else {
-          localPhase = 'Inhale';
-          setBreathPhase('Inhale');
-          setBreathScale(1.35);
-          setCycleCount(prev => prev + 1);
-        }
-        localCounter = 4;
+    let lp = 'Inhale', lc = 4;
+    setBreathPhase('Inhale'); setCounter(4); setBreathScale(1.35);
+    const iv = setInterval(() => {
+      lc -= 1;
+      if (lc <= 0) {
+        if (lp === 'Inhale')      { lp = 'Hold';   setBreathPhase('Hold'); }
+        else if (lp === 'Hold')   { lp = 'Exhale'; setBreathPhase('Exhale'); setBreathScale(1.0); }
+        else                      { lp = 'Inhale'; setBreathPhase('Inhale'); setBreathScale(1.35); setCycleCount(p=>p+1); }
+        lc = 4;
       }
-
-      setCounter(localCounter);
+      setCounter(lc);
     }, 1000);
-
-    return () => clearInterval(interval);
+    return () => clearInterval(iv);
   }, [view, breathActive]);
 
-  // Reset breathing when leaving view
   useEffect(() => {
-    if (view !== 'breathing') {
-      setBreathActive(false);
-      setBreathPhase('Inhale');
-      setBreathScale(1.0);
-      setCounter(4);
-      setCycleCount(0);
-    }
+    if (view !== 'breathing') { setBreathActive(false); setBreathPhase('Inhale'); setBreathScale(1.0); setCounter(4); setCycleCount(0); }
   }, [view]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-
     const userMsg = { id: Date.now(), text: input, isBot: false, reaction: null };
     setMessages(prev => [...prev, userMsg]);
     const currentInput = input;
     setInput('');
     setIsTyping(true);
-
     try {
-      const history = messages.map(m => ({
-        role: m.isBot ? 'assistant' : 'user',
-        content: m.text
-      }));
-
+      const history = messages.map(m => ({ role: m.isBot ? 'assistant' : 'user', content: m.text }));
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1000,
           system: `You are a warm, empathetic mental wellness companion named Sage. You speak gently, never clinically. You listen deeply, validate feelings, and offer grounding suggestions when appropriate. Keep responses concise (2-4 sentences), human, and emotionally attuned. Never diagnose. Always encourage self-compassion. Use one soft emoji occasionally — never more. If someone seems in crisis, gently suggest they speak to a professional or call a helpline.`,
           messages: [...history, { role: 'user', content: currentInput }]
         })
       });
-
       const data = await response.json();
       const replyText = data.content?.[0]?.text || "I'm here with you. Take your time.";
-
       setIsTyping(false);
-      setMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        text: replyText,
-        isBot: true,
-        reaction: null
-      }]);
-    } catch (err) {
+      setMessages(prev => [...prev, { id: Date.now()+1, text: replyText, isBot: true, reaction: null }]);
+    } catch (_) {
       setIsTyping(false);
-      setMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        text: "I'm here with you, even when the connection feels shaky. What's on your mind?",
-        isBot: true,
-        reaction: null
-      }]);
+      setMessages(prev => [...prev, { id: Date.now()+1, text: "I'm here with you, even when the connection feels shaky. What's on your mind?", isBot: true, reaction: null }]);
     }
   };
 
   const handleReaction = (msgId, emoji) => {
-    setMessages(prev => prev.map(m =>
-      m.id === msgId
-        ? { ...m, reaction: m.reaction === emoji ? null : emoji }
-        : m
-    ));
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reaction: m.reaction === emoji ? null : emoji } : m));
     setActiveReactionId(null);
+  };
+
+  const handleLogout = async () => {
+    if (user?.logId) {
+      await supabase.from('login_log').update({ ended_at: new Date().toISOString() }).eq('id', user.logId);
+    }
+    onLogout();
   };
 
   const phaseColors = {
     Inhale: { bg: '#e8f4f0', text: '#2d6a5a', label: 'Breathe in slowly...' },
-    Hold: { bg: '#f0eafa', text: '#5a3d8a', label: 'Hold and be still...' },
+    Hold:   { bg: '#f0eafa', text: '#5a3d8a', label: 'Hold and be still...' },
     Exhale: { bg: '#fef3e8', text: '#8a5a2d', label: 'Let it all go...' },
   };
 
   const NavItem = ({ id, icon, label }) => (
     <button
-      onClick={() => { setView(id); setSidebarOpen(false); }}
+      onClick={() => { setView(id); if (window.innerWidth < 768) setSidebarOpen(false); }}
       className={`w-full py-3 px-4 rounded-xl border-2 font-bold text-sm transition-all flex items-center gap-3 ${
         view === id
           ? 'bg-[#ffcaa9] text-[#563830] border-[#4a5d55] shadow-[3px_3px_0px_#4a5d55] -translate-y-0.5'
           : 'bg-white text-[#718a80] border-[#c2d6ce] hover:border-[#4a5d55] active:scale-95'
       }`}
     >
-      <span>{icon}</span> {label}
+      <span>{icon}</span>
+      {sidebarOpen && <span>{label}</span>}
     </button>
   );
 
@@ -221,251 +482,238 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* Mobile overlay */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 z-20 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/30 z-20 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* SIDEBAR */}
-      <div className={`
-        fixed md:relative top-0 left-0 h-full z-30 md:z-10
-        w-72 bg-[#e2efe9] border-r-2 border-[#4a5d55] flex flex-col justify-between p-5
-        transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
-        <div className="space-y-6 overflow-y-auto flex-1">
-
-          {/* Profile */}
-          <div className="flex items-center gap-3 bg-[#fffaf5] p-3 rounded-2xl border-2 border-[#4a5d55] shadow-[2px_2px_0px_#4a5d55]">
-            <div className="w-11 h-11 rounded-full bg-[#ffcaa9] border-2 border-[#4a5d55] flex items-center justify-center font-serif text-lg font-black text-[#563830] flex-shrink-0">
-              {user?.name ? user.name[0].toUpperCase() : 'U'}
-            </div>
-            <div className="overflow-hidden">
-              <h3 className="font-serif font-black text-sm text-[#4a5d55] truncate">
-                {user?.name || 'Explorer'}
-              </h3>
-              <p className="text-xs text-[#718a80] font-semibold">Mind Space Active ✦</p>
-            </div>
-          </div>
-
-          {/* Nav */}
-          <div className="space-y-2.5">
-            <NavItem id="chat" icon="💬" label="Companion Chat" />
-            <NavItem id="breathing" icon="🌬️" label="Breathing Exercise" />
-            <NavItem id="journal" icon="📓" label="Mood Journal" />
-          </div>
-
-          {/* Recent journeys */}
-          <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-[#718a80] mb-2.5 px-1">
-              Recent Journeys
-            </h4>
-            <div className="space-y-2">
-              {[
-                { icon: '🌙', label: 'Evening Reflection' },
-                { icon: '🍃', label: 'Grounding Session' },
-                { icon: '💭', label: 'Anxiety Check-in' },
-              ].map(item => (
-                <div
-                  key={item.label}
-                  className="p-3 bg-white/70 border border-[#c2d6ce] rounded-xl text-xs font-semibold cursor-pointer hover:bg-white active:scale-98 transition-all flex items-center gap-2 text-[#4a5d55]"
-                >
-                  {item.icon} {item.label}
+      {/* ── SIDEBAR ── */}
+      <div
+        className={`
+          fixed md:relative top-0 left-0 h-full z-30 md:z-10
+          bg-[#e2efe9] border-r-2 border-[#4a5d55] flex flex-col justify-between
+          transition-all duration-300 ease-in-out overflow-hidden
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}
+        style={{ width: sidebarOpen ? (window.innerWidth < 768 ? 288 : sidebarWidth) : (window.innerWidth >= 768 ? 0 : 0), padding: sidebarOpen ? undefined : 0 }}
+      >
+        {sidebarOpen && (
+          <div className="flex flex-col justify-between h-full p-5 overflow-y-auto">
+            <div className="space-y-5">
+              {/* User card */}
+              <div className="flex items-center gap-3 bg-[#fffaf5] p-3 rounded-2xl border-2 border-[#4a5d55] shadow-[2px_2px_0px_#4a5d55]">
+                <div className="w-11 h-11 rounded-full bg-[#ffcaa9] border-2 border-[#4a5d55] flex items-center justify-center font-serif text-lg font-black text-[#563830] flex-shrink-0">
+                  {user?.name ? user.name[0].toUpperCase() : 'U'}
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="overflow-hidden">
+                  <h3 className="font-serif font-black text-sm text-[#4a5d55] truncate">{user?.name || 'Explorer'}</h3>
+                  <p className="text-xs text-[#718a80] font-semibold">Mind Space Active ✦</p>
+                </div>
+              </div>
 
-          {/* Daily check-in */}
-          <div className="bg-white/60 border border-[#c2d6ce] rounded-2xl p-4">
-            <p className="text-xs font-black text-[#4a5d55] uppercase tracking-wide mb-2">How are you feeling?</p>
-            <div className="flex justify-between">
-              {['😞','😐','🙂','😊','🌟'].map((emoji, i) => (
-                <button
-                  key={i}
-                  className="text-xl hover:scale-125 active:scale-110 transition-transform p-1"
-                  onClick={() => {
-                    setView('chat');
-                    setSidebarOpen(false);
-                    setTimeout(() => {
-                      setMessages(prev => [...prev, {
-                        id: Date.now(),
-                        text: `I'm feeling ${['really low','okay','alright','good','great'][i]} today ${emoji}`,
-                        isBot: false,
-                        reaction: null
-                      }]);
-                    }, 100);
-                  }}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+              {/* Nav */}
+              <div className="space-y-2.5">
+                <NavItem id="chat"      icon="💬" label="Companion Chat"    />
+                <NavItem id="breathing" icon="🌬️" label="Breathing Exercise" />
+                <NavItem id="journal"   icon="📓" label="Mood Journal"       />
+              </div>
 
-        {/* Footer */}
-        <button
-          onClick={onLogout}
-          className="mt-4 w-full py-3 bg-[#fceade] hover:bg-[#f7d5c0] active:scale-98 border-2 border-[#563830] text-[#563830] font-black text-xs uppercase tracking-wider rounded-xl shadow-[2px_2px_0px_#563830] transition-all"
-        >
-          Leave Space 🚪
-        </button>
+              {/* Recent journeys */}
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-[#718a80] mb-2.5 px-1">Recent Journeys</h4>
+                <div className="space-y-2">
+                  {[
+                    { icon: '🌙', label: 'Evening Reflection' },
+                    { icon: '🍃', label: 'Grounding Session'  },
+                    { icon: '💭', label: 'Anxiety Check-in'   },
+                  ].map(item => (
+                    <div key={item.label} className="p-3 bg-white/70 border border-[#c2d6ce] rounded-xl text-xs font-semibold cursor-pointer hover:bg-white transition-all flex items-center gap-2 text-[#4a5d55]">
+                      {item.icon} {item.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Mood quick-send */}
+              <div className="bg-white/60 border border-[#c2d6ce] rounded-2xl p-4">
+                <p className="text-xs font-black text-[#4a5d55] uppercase tracking-wide mb-2">How are you feeling?</p>
+                <div className="flex justify-between">
+                  {['😞','😐','🙂','😊','🌟'].map((emoji, i) => (
+                    <button key={i} className="text-xl hover:scale-125 active:scale-110 transition-transform p-1"
+                      onClick={() => {
+                        setView('chat');
+                        if (window.innerWidth < 768) setSidebarOpen(false);
+                        setTimeout(() => setMessages(prev => [...prev, {
+                          id: Date.now(), isBot: false, reaction: null,
+                          text: `I'm feeling ${['really low','okay','alright','good','great'][i]} today ${emoji}`,
+                        }]), 100);
+                      }}
+                    >{emoji}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              className="mt-4 w-full py-3 bg-[#fceade] hover:bg-[#f7d5c0] active:scale-98 border-2 border-[#563830] text-[#563830] font-black text-xs uppercase tracking-wider rounded-xl shadow-[2px_2px_0px_#563830] transition-all"
+            >
+              Leave Space 🚪
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* ── RESIZE HANDLE (desktop only, only when open) ── */}
+      {sidebarOpen && (
+        <div
+          onMouseDown={onMouseDownResize}
+          className="hidden md:flex w-2 cursor-col-resize items-center justify-center z-10 group flex-shrink-0"
+          style={{ background: 'transparent' }}
+        >
+          <div className="w-0.5 h-12 bg-[#c2d6ce] group-hover:bg-[#4a5d55] rounded-full transition-colors" />
+        </div>
+      )}
+
+      {/* ── MAIN CONTENT ── */}
       <div className="flex-1 flex flex-col min-w-0 relative">
 
-        {/* Mobile top bar */}
-        <div className="md:hidden flex items-center justify-between px-4 py-3 bg-[#e2efe9] border-b-2 border-[#4a5d55]">
+        {/* Top bar — always visible, has hamburger */}
+        <div className="flex items-center justify-between px-4 py-3 bg-[#e2efe9] border-b-2 border-[#4a5d55]">
           <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-xl bg-white border-2 border-[#4a5d55] shadow-[2px_2px_0px_#4a5d55] active:translate-y-0.5 transition-transform"
+            onClick={() => setSidebarOpen(o => !o)}
+            className="p-2 rounded-xl bg-white border-2 border-[#4a5d55] shadow-[2px_2px_0px_#4a5d55] active:translate-y-0.5 transition-transform flex-shrink-0"
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Open sidebar'}
           >
+            {/* Three lines */}
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <rect x="1" y="3" width="16" height="2" rx="1" fill="#4a5d55"/>
-              <rect x="1" y="8" width="12" height="2" rx="1" fill="#4a5d55"/>
+              <rect x="1" y="3"  width="16" height="2" rx="1" fill="#4a5d55"/>
+              <rect x="1" y="8"  width="12" height="2" rx="1" fill="#4a5d55"/>
               <rect x="1" y="13" width="16" height="2" rx="1" fill="#4a5d55"/>
             </svg>
           </button>
           <span className="font-serif font-black text-[#563830] text-base">
             {view === 'chat' ? '💬 Companion' : view === 'breathing' ? '🌬️ Breathe' : '📓 Journal'}
           </span>
-          <div className="w-10 h-10 rounded-full bg-[#ffcaa9] border-2 border-[#4a5d55] flex items-center justify-center font-bold text-sm text-[#563830]">
-            {user?.name ? user.name[0].toUpperCase() : 'U'}
+          {/* Profile avatar + dropdown */}
+          <div className="relative" ref={profileRef}>
+            <button
+              onClick={() => setProfileOpen(o => !o)}
+              className={`w-10 h-10 rounded-full bg-[#ffcaa9] border-2 border-[#4a5d55] flex items-center justify-center font-bold text-sm text-[#563830] transition-all shadow-[2px_2px_0px_#4a5d55] active:shadow-none active:translate-y-0.5 ${profileOpen ? 'ring-2 ring-[#4a5d55] ring-offset-1' : ''}`}
+              aria-label="Profile menu"
+            >
+              {user?.name ? user.name[0].toUpperCase() : 'U'}
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 top-12 w-52 bg-white border-2 border-[#4a5d55] rounded-2xl shadow-[4px_4px_0px_#4a5d55] z-50 overflow-hidden">
+                {/* User info header */}
+                <div className="px-4 py-3 bg-[#e2efe9] border-b border-[#c2d6ce]">
+                  <p className="font-serif font-black text-sm text-[#563830] truncate">{user?.name || 'Explorer'}</p>
+                  <p className="text-[10px] text-[#718a80] font-semibold mt-0.5">Mind Space Active ✦</p>
+                </div>
+
+                {/* Menu items */}
+                <div className="py-1.5">
+                  <button
+                    onClick={() => { setProfileOpen(false); /* wire up your change-password flow */ }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-[#4a5d55] hover:bg-[#f0f7f3] transition-colors text-left"
+                  >
+                    <span className="text-base">🔑</span> Change Password
+                  </button>
+                  <button
+                    onClick={() => { setProfileOpen(false); setMessages([{ id: 1, text: "Hello there I'm your wellness companion. How is your mind feeling today?", isBot: true, reaction: null }]); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-[#4a5d55] hover:bg-[#f0f7f3] transition-colors text-left"
+                  >
+                    <span className="text-base">🗑️</span> Delete Chats
+                  </button>
+                  <button
+                    onClick={() => { setProfileOpen(false); setView('journal'); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-[#4a5d55] hover:bg-[#f0f7f3] transition-colors text-left"
+                  >
+                    <span className="text-base">📓</span> My Journal
+                  </button>
+                  <button
+                    onClick={() => { setProfileOpen(false); /* wire up settings */ }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-[#4a5d55] hover:bg-[#f0f7f3] transition-colors text-left"
+                  >
+                    <span className="text-base">⚙️</span> Settings
+                  </button>
+                </div>
+
+                {/* Divider + logout */}
+                <div className="border-t border-[#e2efe9] py-1.5">
+                  <button
+                    onClick={() => { setProfileOpen(false); handleLogout(); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-[#a04040] hover:bg-[#fff0ee] transition-colors text-left"
+                  >
+                    <span className="text-base">🚪</span> Leave Space
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* ── VIEW: CHAT ── */}
         {view === 'chat' && (
           <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-
-            {/* Door entrance animation overlay */}
             {!welcomeComplete && (
               <div className="absolute inset-0 bg-[#fffbf7] z-50 flex flex-col items-center justify-center gap-6 p-6">
-                <h2 className="text-xl font-serif font-black text-[#563830] tracking-tight">
-                  Opening your space...
-                </h2>
-
-                {/* Door frame */}
+                <h2 className="text-xl font-serif font-black text-[#563830] tracking-tight">Opening your space...</h2>
                 <div
                   className="relative overflow-hidden rounded-t-full border-4 border-[#4a5d55] shadow-[4px_4px_0px_#2c3a34]"
-                  style={{ width: 160, height: 200, background: '#e2efe9', perspective: '600px' }}
+                  style={{ width:160, height:200, background:'#e2efe9', perspective:'600px' }}
                 >
-                  {/* Rabbit inside — visible behind the door */}
                   <div className="absolute inset-0 flex items-end justify-center bg-[#e2efe9] pb-3">
-                    <style>{`
-                      @keyframes rabbitJump {
-                        0%   { transform: translateY(0px) scaleY(1) scaleX(1); }
-                        20%  { transform: translateY(0px) scaleY(0.8) scaleX(1.15); }
-                        45%  { transform: translateY(-28px) scaleY(1.1) scaleX(0.92); }
-                        65%  { transform: translateY(-28px) scaleY(1.1) scaleX(0.92); }
-                        85%  { transform: translateY(0px) scaleY(0.85) scaleX(1.12); }
-                        100% { transform: translateY(0px) scaleY(1) scaleX(1); }
-                      }
-                      @keyframes wave {
-                        0%   { transform: rotate(0deg); }
-                        25%  { transform: rotate(-40deg); }
-                        75%  { transform: rotate(12deg); }
-                        100% { transform: rotate(0deg); }
-                      }
-                      @keyframes shadowPulse {
-                        0%,100% { transform: scaleX(1); opacity: 0.25; }
-                        45%,65% { transform: scaleX(0.5); opacity: 0.1; }
-                        85%     { transform: scaleX(1.1); opacity: 0.3; }
-                      }
-                    `}</style>
-
-                    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      {/* Shadow under rabbit */}
+                    <div style={{ position:'relative', display:'flex', flexDirection:'column', alignItems:'center' }}>
                       <div style={{
-                        width: 48, height: 10, borderRadius: '50%',
-                        background: '#4a5d55', opacity: 0.2,
-                        position: 'absolute', bottom: -4, left: '50%',
-                        transform: 'translateX(-50%)',
+                        width:48, height:10, borderRadius:'50%', background:'#4a5d55', opacity:0.2,
+                        position:'absolute', bottom:-4, left:'50%', transform:'translateX(-50%)',
                         animation: rabbitWaving ? 'shadowPulse 0.7s ease-in-out infinite' : 'none',
                       }} />
-
-                      {/* Rabbit body — jumps */}
-                      <div style={{
-                        animation: rabbitWaving ? 'rabbitJump 0.7s ease-in-out infinite' : 'none',
-                        transformOrigin: 'bottom center',
-                      }}>
+                      <div style={{ animation: rabbitWaving ? 'rabbitJump 0.7s ease-in-out infinite' : 'none', transformOrigin:'bottom center' }}>
                         <svg width="88" height="108" viewBox="0 0 200 220" fill="none">
-                          <ellipse cx="72" cy="40" rx="15" ry="38" fill="#fcd3c1" />
-                          <ellipse cx="72" cy="44" rx="8" ry="24" fill="#ffb499" />
-                          <ellipse cx="128" cy="40" rx="15" ry="38" fill="#fcd3c1" />
-                          <ellipse cx="128" cy="44" rx="8" ry="24" fill="#ffb499" />
-                          <circle cx="100" cy="115" r="44" fill="#fcd3c1" />
-                          <circle cx="100" cy="122" r="26" fill="#fff9f6" />
-                          <circle cx="73" cy="110" r="8" fill="#ffa280" opacity="0.5" />
-                          <circle cx="127" cy="110" r="8" fill="#ffa280" opacity="0.5" />
-                          <circle cx="82" cy="107" r="5" fill="#4a332d" />
-                          <circle cx="118" cy="107" r="5" fill="#4a332d" />
-                          <circle cx="84" cy="105" r="1.5" fill="white" />
-                          <circle cx="120" cy="105" r="1.5" fill="white" />
+                          <ellipse cx="72"  cy="40"  rx="15" ry="38" fill="#fcd3c1" />
+                          <ellipse cx="72"  cy="44"  rx="8"  ry="24" fill="#ffb499" />
+                          <ellipse cx="128" cy="40"  rx="15" ry="38" fill="#fcd3c1" />
+                          <ellipse cx="128" cy="44"  rx="8"  ry="24" fill="#ffb499" />
+                          <circle  cx="100" cy="115" r="44"           fill="#fcd3c1" />
+                          <circle  cx="100" cy="122" r="26"           fill="#fff9f6" />
+                          <circle  cx="73"  cy="110" r="8"  fill="#ffa280" opacity="0.5" />
+                          <circle  cx="127" cy="110" r="8"  fill="#ffa280" opacity="0.5" />
+                          <circle  cx="82"  cy="107" r="5"            fill="#4a332d" />
+                          <circle  cx="118" cy="107" r="5"            fill="#4a332d" />
+                          <circle  cx="84"  cy="105" r="1.5"          fill="white"   />
+                          <circle  cx="120" cy="105" r="1.5"          fill="white"   />
                           <path d="M 93 120 Q 100 128 107 120" stroke="#4a332d" strokeWidth="3" strokeLinecap="round" fill="none" />
-                          {/* Waving arm */}
-                          <g style={{
-                            transformOrigin: '142px 112px',
-                            animation: rabbitWaving ? 'wave 0.6s ease-in-out infinite' : 'none',
-                          }}>
+                          <g style={{ transformOrigin:'142px 112px', animation: rabbitWaving ? 'wave 0.6s ease-in-out infinite' : 'none' }}>
                             <ellipse cx="148" cy="118" rx="10" ry="19" fill="#fcd3c1" transform="rotate(-25 148 118)" />
                           </g>
                         </svg>
                       </div>
                     </div>
                   </div>
-
-                  {/* Door panel — swings open with 3D rotate */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      background: '#ffcaa9',
-                      transformOrigin: 'left center',
-                      transform: doorOpen ? 'perspective(600px) rotateY(-115deg)' : 'perspective(600px) rotateY(0deg)',
-                      transition: 'transform 1.6s cubic-bezier(0.4, 0, 0.2, 1)',
-                      borderRight: '4px solid #4a5d55',
-                      zIndex: 10,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      paddingRight: 12,
-                    }}
-                  >
-                    {/* Door knob */}
-                    <div
-                      style={{
-                        width: 14, height: 14,
-                        borderRadius: '50%',
-                        background: '#4a5d55',
-                        border: '2px solid #2c3a34',
-                        boxShadow: '1px 1px 0px #2c3a34',
-                      }}
-                    />
+                  <div style={{
+                    position:'absolute', inset:0, background:'#ffcaa9',
+                    transformOrigin:'left center',
+                    transform: doorOpen ? 'perspective(600px) rotateY(-115deg)' : 'perspective(600px) rotateY(0deg)',
+                    transition:'transform 1.6s cubic-bezier(0.4,0,0.2,1)',
+                    borderRight:'4px solid #4a5d55', zIndex:10,
+                    display:'flex', alignItems:'center', justifyContent:'flex-end', paddingRight:12,
+                  }}>
+                    <div style={{ width:14, height:14, borderRadius:'50%', background:'#4a5d55', border:'2px solid #2c3a34', boxShadow:'1px 1px 0px #2c3a34' }} />
                   </div>
                 </div>
-
-                <p className="text-sm font-bold text-[#718a80] animate-pulse">
-                  Your companion is stepping in!
-                </p>
+                <p className="text-sm font-bold text-[#718a80] animate-pulse">Your companion is stepping in!</p>
               </div>
             )}
 
-
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5" ref={reactionRef}>
               {messages.map((msg) => (
                 <div key={msg.id} className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'} items-end gap-2`}>
-
                   {msg.isBot && (
-                    <div className="w-8 h-8 rounded-full bg-[#fcd3c1] border-2 border-[#4a5d55] flex-shrink-0 flex items-center justify-center text-sm select-none">
-                      🐰
-                    </div>
+                    <div className="w-8 h-8 rounded-full bg-[#fcd3c1] border-2 border-[#4a5d55] flex-shrink-0 flex items-center justify-center text-sm select-none">🐰</div>
                   )}
-
                   <div className="relative max-w-[78%] md:max-w-[65%]">
                     <div className={`p-3.5 rounded-2xl border-2 border-[#4a5d55] text-sm font-medium leading-relaxed relative ${
                       msg.isBot
@@ -474,8 +722,6 @@ export default function Dashboard({ user, onLogout }) {
                     }`}>
                       {msg.text}
                     </div>
-
-                    {/* Reaction display */}
                     {msg.reaction && (
                       <button
                         onClick={() => handleReaction(msg.id, msg.reaction)}
@@ -484,32 +730,22 @@ export default function Dashboard({ user, onLogout }) {
                         {msg.reaction}
                       </button>
                     )}
-
-                    {/* Reaction trigger — tap-friendly for bot messages */}
                     {msg.isBot && (
                       <button
                         onClick={() => setActiveReactionId(activeReactionId === msg.id ? null : msg.id)}
-                        className={`absolute -bottom-3 ${msg.reaction ? 'hidden' : ''} ${msg.isBot ? '-right-2' : '-left-2'} w-7 h-7 bg-white border-2 border-[#c2d6ce] hover:border-[#4a5d55] rounded-full flex items-center justify-center text-xs shadow-sm z-10 transition-all`}
+                        className={`absolute -bottom-3 ${msg.reaction ? 'hidden' : ''} -right-2 w-7 h-7 bg-white border-2 border-[#c2d6ce] hover:border-[#4a5d55] rounded-full flex items-center justify-center text-xs shadow-sm z-10 transition-all`}
                       >
                         <span className="text-[#718a80]">+</span>
                       </button>
                     )}
-
-                    {/* Reaction picker — mobile-friendly bottom sheet style */}
                     {activeReactionId === msg.id && (
-                      <div className={`absolute ${msg.isBot ? 'left-0' : 'right-0'} bottom-6 bg-white border-2 border-[#4a5d55] rounded-2xl shadow-lg z-40 p-3`}
-                        style={{ minWidth: '260px' }}
-                      >
+                      <div className={`absolute ${msg.isBot ? 'left-0' : 'right-0'} bottom-6 bg-white border-2 border-[#4a5d55] rounded-2xl shadow-lg z-40 p-3`} style={{ minWidth:'260px' }}>
                         <p className="text-[10px] font-black uppercase tracking-wider text-[#718a80] mb-2.5 px-1">How did this make you feel?</p>
                         <div className="grid grid-cols-3 gap-2">
                           {REACTION_OPTIONS.map(({ emoji, label }) => (
-                            <button
-                              key={emoji}
-                              onClick={() => handleReaction(msg.id, emoji)}
+                            <button key={emoji} onClick={() => handleReaction(msg.id, emoji)}
                               className={`flex flex-col items-center gap-1 py-2.5 px-2 rounded-xl border-2 transition-all active:scale-95 ${
-                                msg.reaction === emoji
-                                  ? 'border-[#4a5d55] bg-[#e2efe9]'
-                                  : 'border-[#e2efe9] hover:border-[#4a5d55] hover:bg-[#f5faf7]'
+                                msg.reaction === emoji ? 'border-[#4a5d55] bg-[#e2efe9]' : 'border-[#e2efe9] hover:border-[#4a5d55] hover:bg-[#f5faf7]'
                               }`}
                             >
                               <span className="text-xl">{emoji}</span>
@@ -522,78 +758,42 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 </div>
               ))}
-
-              {/* Typing indicator */}
               {isTyping && (
                 <div className="flex justify-start items-end gap-2">
-                  <div className="w-8 h-8 rounded-full bg-[#FAF8F3] border-2 border-[#4a5d55] flex-shrink-0 flex items-center justify-center text-sm">
-                    🐰
-                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[#FAF8F3] border-2 border-[#4a5d55] flex-shrink-0 flex items-center justify-center text-sm">🐰</div>
                   <div className="bg-white border-2 border-[#4a5d55] rounded-2xl rounded-bl-none px-4 py-3 shadow-[2px_2px_0px_#4a5d55] flex gap-1.5 items-center">
                     {[0,1,2].map(i => (
-                      <div
-                        key={i}
-                        className="w-2 h-2 rounded-full bg-[#ffa47d] animate-bounce"
-                        style={{ animationDelay: `${i * 0.15}s` }}
-                      />
+                      <div key={i} className="w-2 h-2 rounded-full bg-[#ffa47d] animate-bounce" style={{ animationDelay:`${i*0.15}s` }} />
                     ))}
                   </div>
                 </div>
               )}
-
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Suggested prompts */}
             {messages.length <= 2 && (
               <div className="px-4 md:px-6 pb-2 flex gap-2 overflow-x-auto scrollbar-hide">
-                {[
-                  "I'm feeling anxious today",
-                  "I need to vent",
-                  "Help me calm down",
-                  "I'm having a hard week",
-                ].map(prompt => (
-                  <button
-                    key={prompt}
-                    onClick={() => setInput(prompt)}
+                {["I'm feeling anxious today","I need to vent","Help me calm down","I'm having a hard week"].map(prompt => (
+                  <button key={prompt} onClick={() => setInput(prompt)}
                     className="flex-shrink-0 px-3.5 py-2 bg-white border-2 border-[#c2d6ce] hover:border-[#4a5d55] rounded-full text-xs font-semibold text-[#4a5d55] transition-all active:scale-95"
-                  >
-                    {prompt}
-                  </button>
+                  >{prompt}</button>
                 ))}
               </div>
             )}
 
-            {/* Input */}
-            <form
-              onSubmit={handleSendMessage}
-              className="p-3 md:p-4 bg-white border-t-2 border-[#e2efe9] flex gap-2.5 items-end"
-            >
+            <form onSubmit={handleSendMessage} className="p-3 md:p-4 bg-white border-t-2 border-[#e2efe9] flex gap-2.5 items-end">
               <textarea
                 value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage(e);
-                  }
-                }}
+                onChange={(e) => { setInput(e.target.value); e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'; }}
+                onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
                 placeholder="Share what's on your mind..."
                 rows={1}
                 className="flex-1 px-4 py-3 bg-[#fdfaf2] border-2 border-[#c2d6ce] focus:border-[#4a5d55] rounded-xl outline-none font-medium text-sm transition-colors resize-none leading-relaxed"
-                style={{ minHeight: '46px', maxHeight: '120px' }}
+                style={{ minHeight:'46px', maxHeight:'120px' }}
               />
-              <button
-                type="submit"
-                disabled={!input.trim() || isTyping}
+              <button type="submit" disabled={!input.trim() || isTyping}
                 className="px-4 py-3 bg-[#4a5d55] disabled:opacity-40 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-[3px_3px_0px_#2c3a34] active:translate-y-0.5 active:shadow-[1px_1px_0px_#2c3a34] transition-all flex-shrink-0"
-              >
-                Send
-              </button>
+              >Send</button>
             </form>
           </div>
         )}
@@ -602,134 +802,68 @@ export default function Dashboard({ user, onLogout }) {
         {view === 'breathing' && (
           <div
             className="flex-1 flex flex-col items-center justify-center p-6 text-center transition-colors duration-1000"
-            style={{ background: `linear-gradient(to bottom, #fffbf7, ${phaseColors[breathPhase]?.bg || '#fffbf7'})` }}
+            style={{ background:`linear-gradient(to bottom, #fffbf7, ${phaseColors[breathPhase]?.bg || '#fffbf7'})` }}
           >
             <div className="max-w-sm w-full space-y-6 flex flex-col items-center">
-
               <div>
-                <span className="px-4 py-1.5 bg-[#4a5d55] text-white text-xs font-black uppercase tracking-widest rounded-full">
-                  Guided Grounding
-                </span>
-                <h2 className="text-2xl md:text-3xl font-serif font-black text-[#563830] mt-3">
-                  Box Breathing
-                </h2>
-                <p className="text-sm text-[#718a80] mt-1 font-medium">
-                  Follow the rabbit. 4 counts each phase.
-                </p>
+                <span className="px-4 py-1.5 bg-[#4a5d55] text-white text-xs font-black uppercase tracking-widest rounded-full">Guided Grounding</span>
+                <h2 className="text-2xl md:text-3xl font-serif font-black text-[#563830] mt-3">Box Breathing</h2>
+                <p className="text-sm text-[#718a80] mt-1 font-medium">Follow the rabbit. 4 counts each phase.</p>
               </div>
-
-              {/* Breathing visual */}
-              <div className="relative flex items-center justify-center" style={{ width: 240, height: 240 }}>
-                {/* Outer glow ring */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    width: 220, height: 220,
-                    borderRadius: '50%',
-                    border: '3px solid',
-                    borderColor: phaseColors[breathPhase]?.text || '#4a5d55',
-                    opacity: breathActive ? (breathPhase === 'Hold' ? 0.4 : 0.15) : 0.1,
-                    transform: `scale(${breathActive ? breathScale * 1.2 : 1})`,
-                    transition: breathPhase === 'Hold' ? 'opacity 0.5s ease' : 'transform 4s linear, opacity 0.5s ease',
-                  }}
-                />
-
-                {/* Main rabbit circle */}
-                <div
-                  style={{
-                    width: 180, height: 180,
-                    borderRadius: '50%',
-                    background: 'white',
-                    border: '4px solid #4a5d55',
-                    boxShadow: '4px 4px 0px #2c3a34',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transform: `scale(${breathActive ? breathScale : 1})`,
-                    transition: breathPhase === 'Hold' ? 'none' : 'transform 4s linear',
-                    position: 'relative', zIndex: 10,
-                  }}
-                >
+              <div className="relative flex items-center justify-center" style={{ width:240, height:240 }}>
+                <div style={{
+                  position:'absolute', width:220, height:220, borderRadius:'50%', border:'3px solid',
+                  borderColor: phaseColors[breathPhase]?.text || '#4a5d55',
+                  opacity: breathActive ? (breathPhase === 'Hold' ? 0.4 : 0.15) : 0.1,
+                  transform: `scale(${breathActive ? breathScale*1.2 : 1})`,
+                  transition: breathPhase === 'Hold' ? 'opacity 0.5s ease' : 'transform 4s linear, opacity 0.5s ease',
+                }} />
+                <div style={{
+                  width:180, height:180, borderRadius:'50%', background:'white',
+                  border:'4px solid #4a5d55', boxShadow:'4px 4px 0px #2c3a34',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  transform:`scale(${breathActive ? breathScale : 1})`,
+                  transition: breathPhase === 'Hold' ? 'none' : 'transform 4s linear',
+                  position:'relative', zIndex:10,
+                }}>
                   <RabbitSVG phase={breathActive ? breathPhase : 'Hold'} size={130} />
                 </div>
               </div>
-
-              {/* Phase label & counter */}
               {breathActive ? (
                 <div className="space-y-3 w-full">
-                  <p
-                    className="text-xl md:text-2xl font-serif font-black transition-colors duration-700"
-                    style={{ color: phaseColors[breathPhase]?.text }}
-                  >
+                  <p className="text-xl md:text-2xl font-serif font-black transition-colors duration-700" style={{ color: phaseColors[breathPhase]?.text }}>
                     {phaseColors[breathPhase]?.label}
                   </p>
-
-                  {/* Progress bar */}
                   <div className="w-full bg-[#e2efe9] rounded-full h-2 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-1000"
-                      style={{
-                        width: `${((4 - counter + 1) / 4) * 100}%`,
-                        background: phaseColors[breathPhase]?.text,
-                      }}
-                    />
+                    <div className="h-full rounded-full transition-all duration-1000" style={{ width:`${((4-counter+1)/4)*100}%`, background: phaseColors[breathPhase]?.text }} />
                   </div>
-
                   <div className="flex items-center justify-center gap-4">
-                    <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center border-2 font-black text-xl shadow-[2px_2px_0px]"
-                      style={{
-                        background: phaseColors[breathPhase]?.bg,
-                        borderColor: phaseColors[breathPhase]?.text,
-                        color: phaseColors[breathPhase]?.text,
-                        boxShadow: `2px 2px 0px ${phaseColors[breathPhase]?.text}`,
-                      }}
-                    >
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center border-2 font-black text-xl shadow-[2px_2px_0px]"
+                      style={{ background: phaseColors[breathPhase]?.bg, borderColor: phaseColors[breathPhase]?.text, color: phaseColors[breathPhase]?.text, boxShadow:`2px 2px 0px ${phaseColors[breathPhase]?.text}` }}>
                       {counter}
                     </div>
-                    {cycleCount > 0 && (
-                      <p className="text-xs text-[#718a80] font-bold">
-                        {cycleCount} cycle{cycleCount > 1 ? 's' : ''} complete ✦
-                      </p>
-                    )}
+                    {cycleCount > 0 && <p className="text-xs text-[#718a80] font-bold">{cycleCount} cycle{cycleCount>1?'s':''} complete ✦</p>}
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-[#718a80] font-medium">
-                  Tap start when you're ready. Sit comfortably and breathe normally.
-                </p>
+                <p className="text-sm text-[#718a80] font-medium">Tap start when you're ready. Sit comfortably and breathe normally.</p>
               )}
-
-              {/* Controls */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => setBreathActive(prev => !prev)}
+                  onClick={() => setBreathActive(p => !p)}
                   className="px-7 py-3 font-black text-sm uppercase tracking-wider rounded-xl border-2 border-[#4a5d55] shadow-[3px_3px_0px_#2c3a34] active:translate-y-0.5 active:shadow-[1px_1px_0px_#2c3a34] transition-all"
-                  style={{
-                    background: breathActive ? '#fceade' : '#4a5d55',
-                    color: breathActive ? '#563830' : 'white',
-                  }}
+                  style={{ background: breathActive ? '#fceade' : '#4a5d55', color: breathActive ? '#563830' : 'white' }}
                 >
                   {breathActive ? 'Pause' : 'Start'}
                 </button>
                 {breathActive && (
                   <button
-                    onClick={() => {
-                      setBreathActive(false);
-                      setBreathPhase('Inhale');
-                      setBreathScale(1.0);
-                      setCounter(4);
-                      setCycleCount(0);
-                    }}
+                    onClick={() => { setBreathActive(false); setBreathPhase('Inhale'); setBreathScale(1.0); setCounter(4); setCycleCount(0); }}
                     className="px-5 py-3 font-black text-xs uppercase tracking-wider rounded-xl border-2 border-[#c2d6ce] bg-white text-[#718a80] hover:border-[#4a5d55] transition-all active:scale-95"
-                  >
-                    Reset
-                  </button>
+                  >Reset</button>
                 )}
               </div>
-
-              <button
-                onClick={() => setView('chat')}
-                className="text-xs font-bold text-[#718a80] underline underline-offset-2 hover:text-[#4a5d55] transition-colors"
-              >
+              <button onClick={() => setView('chat')} className="text-xs font-bold text-[#718a80] underline underline-offset-2 hover:text-[#4a5d55] transition-colors">
                 Return to chat
               </button>
             </div>
@@ -737,94 +871,7 @@ export default function Dashboard({ user, onLogout }) {
         )}
 
         {/* ── VIEW: JOURNAL ── */}
-        {view === 'journal' && (
-          <div className="flex-1 overflow-y-auto p-4 md:p-8">
-            <div className="max-w-xl mx-auto space-y-5">
-              <div>
-                <h2 className="text-2xl font-serif font-black text-[#563830]">Mood Journal 📓</h2>
-                <p className="text-sm text-[#718a80] mt-1">A private space to process your thoughts.</p>
-              </div>
-
-              <JournalEntry />
-
-              {/* Past entries (placeholder) */}
-              <div>
-                <h3 className="text-xs font-black uppercase tracking-wider text-[#718a80] mb-3">Earlier this week</h3>
-                <div className="space-y-3">
-                  {[
-                    { date: 'Yesterday', mood: '😊', preview: 'Today felt lighter than usual. I went for a walk and...' },
-                    { date: '2 days ago', mood: '😐', preview: "Hard to focus. Work was stressful and I couldn't sleep..." },
-                  ].map(entry => (
-                    <div key={entry.date} className="bg-white border-2 border-[#c2d6ce] rounded-2xl p-4 cursor-pointer hover:border-[#4a5d55] transition-all active:scale-98">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-[#718a80]">{entry.date}</span>
-                        <span className="text-lg">{entry.mood}</span>
-                      </div>
-                      <p className="text-sm text-[#563830] font-medium leading-relaxed line-clamp-2">{entry.preview}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function JournalEntry() {
-  const [text, setText] = useState('');
-  const [mood, setMood] = useState('');
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = () => {
-    if (!text.trim()) return;
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
-
-  return (
-    <div className="bg-white border-2 border-[#4a5d55] rounded-2xl shadow-[3px_3px_0px_#4a5d55] p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-black uppercase tracking-wider text-[#718a80]">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </p>
-        <div className="flex gap-1.5">
-          {['😞','😐','🙂','😊','🌟'].map(e => (
-            <button
-              key={e}
-              onClick={() => setMood(e)}
-              className={`text-lg transition-all ${mood === e ? 'scale-125' : 'opacity-50 hover:opacity-100'}`}
-            >
-              {e}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <textarea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder="What's stirring inside you today? There's no right way to write here..."
-        className="w-full min-h-[140px] bg-[#fdfaf2] border-2 border-[#c2d6ce] focus:border-[#4a5d55] rounded-xl p-4 text-sm font-medium leading-relaxed outline-none resize-none transition-colors"
-      />
-
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-[#718a80] font-medium">
-          {text.length > 0 ? `${text.split(/\s+/).filter(Boolean).length} words` : 'Just start, it gets easier'}
-        </p>
-        <button
-          onClick={handleSave}
-          disabled={!text.trim()}
-          className={`px-5 py-2.5 font-black text-xs uppercase tracking-wider rounded-xl border-2 transition-all active:scale-95 ${
-            saved
-              ? 'bg-[#e2efe9] border-[#4a5d55] text-[#4a5d55]'
-              : 'bg-[#4a5d55] border-[#4a5d55] text-white shadow-[2px_2px_0px_#2c3a34] active:shadow-none disabled:opacity-40'
-          }`}
-        >
-          {saved ? '✓ Saved' : 'Save Entry'}
-        </button>
+        {view === 'journal' && <JournalView user={user} />}
       </div>
     </div>
   );
