@@ -32,15 +32,24 @@ def detect_emotion(text: str) -> dict:
         label = top["label"] if isinstance(top, dict) else top.label
         score = top["score"] if isinstance(top, dict) else top.score
 
-        return {"emotion": label, "score": float(score)}
+        return {"emotion": label, "emotion_score": float(score)}
     except Exception:
-        return {"emotion": "neutral", "score": 0.0}
+        return {"emotion": "neutral", "emotion_score": 0.0}
+
+STRESS_LABELS = {
+    "LABEL_0": "Anxiety",
+    "LABEL_1": "Depression",
+    "LABEL_2": "Normal",
+    "LABEL_3": "Suicidal",
+}
 
 def detect_stress(text: str) -> dict:
     """Evaluates text for mental distress indicators using a fine-tuned classifier."""
     try:
         results = stress_classifier(text)
         top = results[0]
-        return {"stress_level": top["label"], "score": float(top["score"])}
+        raw_label = top["label"]
+        label = STRESS_LABELS.get(raw_label, raw_label)
+        return {"stress_level": label, "stress_score": float(top["score"])}
     except Exception:
-        return {"stress_level": "unknown", "score": 0.0}
+        return {"stress_level": "unknown", "stress_score": 0.0}

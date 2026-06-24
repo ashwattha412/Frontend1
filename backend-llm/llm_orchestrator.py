@@ -43,12 +43,16 @@ def get_strategy(e_label: str, s_label: str):
     tier, strategy = EMOTION_STRATEGIES.get(e_label, ("neutral", "Be a warm, present listener."))
     
     # Stress overrides tier upward in severity
-    if s_label == "stress" and tier == "neutral":
-        tier = "support"
-        strategy = "They seem stressed. Gently ask what's weighing on them without prying."
-    elif s_label == "stress" and tier == "positive":
-        tier = "neutral"
-        strategy = "They seem upbeat but underlying stress is present. Gently check in."
+    if s_label == "Suicidal":
+        tier = "crisis"
+        strategy = "They are expressing severe distress or suicidal ideation. You must be extremely gentle, validating, and prioritize emotional safety. Gently encourage seeking professional help without sounding clinical."
+    elif s_label in ["Anxiety", "Depression"]:
+        if tier == "neutral":
+            tier = "support"
+            strategy = f"They seem neutral, but underlying {s_label.lower()} is detected. Gently ask what's weighing on them without prying."
+        elif tier == "positive":
+            tier = "neutral"
+            strategy = f"They seem upbeat but underlying {s_label.lower()} is present. Gently check in on how they are really feeling."
     
     return tier, strategy
 
@@ -72,7 +76,7 @@ def generate_buddy_response(
         f"The user's detected emotion is '{e_label}' and stress level is '{s_label}'. "
         f"Tone: {tone_guide[tier]} "
         f"Strategy for this message: {strategy} "
-        f"Rules: Max 3 sentences. Never give medical or clinical advice. "
+        f"Rules: Keep your responses concise and conversational (1-3 sentences) by default. HOWEVER, if the user explicitly asks for a list, tips, or detailed explanation, you may provide a longer, complete response. Never give medical or clinical advice. "
         f"Never say 'I detect' or mention the emotion detection. Just respond naturally."
     )
 
@@ -81,7 +85,7 @@ def generate_buddy_response(
     messages.append({"role": "user", "content": user_message})
 
     try:
-        response = chat_client.chat_completion(messages, max_tokens=150, temperature=0.7)
+        response = chat_client.chat_completion(messages, max_tokens=400, temperature=0.7)
         return response.choices[0].message.content
     except Exception:
         return "I'm here with you. Can you tell me a bit more about what's going on?"

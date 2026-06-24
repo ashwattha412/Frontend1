@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# pyrefly: ignore [missing-import]
 import bcrypt
 
 from datetime import datetime, timezone
@@ -65,7 +66,15 @@ def signin(user: SignInRequest):
 
     db_user = result.data[0]
 
-    if not bcrypt.checkpw(user.password.encode("utf-8"),db_user["password"].encode("utf-8")):
+    db_password = db_user["password"]
+    password_correct = False
+    try:
+        password_correct = bcrypt.checkpw(user.password.encode("utf-8"), db_password.encode("utf-8"))
+    except (ValueError, TypeError):
+        # Malformed hash in DB — reject the login
+        password_correct = False
+
+    if not password_correct:
         raise HTTPException(
             status_code=401,
             detail="Wrong password"

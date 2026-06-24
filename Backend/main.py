@@ -14,7 +14,7 @@ from Database.Supabase import supabase
 load_dotenv(override=True)
 
 AURA_URL = os.getenv("AURA_URL", "https://mayank214-aura.hf.space/generate")
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 
 app = FastAPI(
     title="Mental Health Chatbot API",
