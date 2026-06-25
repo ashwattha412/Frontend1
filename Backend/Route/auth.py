@@ -7,6 +7,7 @@ import bcrypt
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from Schema.Schema import SignUpRequest, SignInRequest
+from Schema.Schema import SignUpRequest, SignInRequest, ChangePasswordRequest
 from Database.Supabase import supabase
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -91,7 +92,36 @@ def signin(user: SignInRequest):
         "user_id": db_user["id"],
         "log_id": log_id
     }
+# -------------------------
+# CHANGE PASSWORD
+# -------------------------
+@router.post("/change-password")
+def change_password(payload: ChangePasswordRequest):
 
+    result = supabase.table("registration_table") \
+        .select("*") \
+        .eq("id", payload.user_id) \
+        .execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db_user = result.data[0]
+
+    if not bcrypt.checkpw(payload.current_password.encode("utf-8"), db_user["password"].encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    new_hashed = bcrypt.hashpw(payload.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+    update_result = supabase.table("registration_table") \
+        .update({"password": new_hashed}) \
+        .eq("id", payload.user_id) \
+        .execute()
+
+    if not update_result.data:
+        raise HTTPException(status_code=400, detail="Failed to update password")
+
+    return {"message": "Password updated successfully"}
 
 # -------------------------
 # GET ALL USERS

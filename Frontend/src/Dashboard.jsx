@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -56,6 +57,32 @@ const CHAT_MOOD_BG = {
 function resolveEmotion(source) {
   const raw = source?.emotion ?? source?.detected_emotion ?? source?.mood ?? null;
   return raw ? String(raw).toLowerCase() : null;
+}
+
+// Scoped per-user so different accounts in the same browser tab don't collide,
+// and so logging out (which clears this) makes the next login start fresh.
+const SESSION_STORAGE_KEY = (userId) => `dori_active_session_${userId}`;
+
+// Tracks "last touched" timestamps per chat in localStorage (not sessionStorage,
+// since this needs to survive across reloads AND across browser sessions) so
+// Recent Journeys ordering persists instead of resetting to id-order on reload.
+const SESSION_ACTIVITY_KEY = (userId) => `dori_session_activity_${userId}`;
+
+function loadSessionActivity(userId) {
+  try {
+    const raw = localStorage.getItem(SESSION_ACTIVITY_KEY(userId));
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionActivity(userId, map) {
+  try {
+    localStorage.setItem(SESSION_ACTIVITY_KEY(userId), JSON.stringify(map));
+  } catch {
+    // localStorage unavailable — ordering just won't persist, not fatal.
+  }
 }
 
 const DEFAULT_TITLES = ['', 'New Chat', 'Wellness Chat Session'];
@@ -222,7 +249,10 @@ const FloatingDecor = () => {
 };
 
 // ─── SESSION CONTEXT MENU ─────────────────────────────────────────────────────
-function SessionMenu({ onRename, onDelete, onClose }) {
+// Rendered through a portal into document.body and positioned with `fixed`
+// coordinates from the trigger button's bounding rect. This keeps it from
+// getting clipped or jittering inside the scrollable "Recent Journeys" list.
+function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -240,10 +270,20 @@ function SessionMenu({ onRename, onDelete, onClose }) {
     };
   }, [onClose]);
 
-  return (
+  if (!anchorRect) return null;
+
+  const MENU_WIDTH = 144; // matches w-36
+  const top  = anchorRect.bottom + 6;
+  const left = Math.min(
+    Math.max(8, anchorRect.right - MENU_WIDTH),
+    window.innerWidth - MENU_WIDTH - 8
+  );
+
+  return createPortal(
     <div
       ref={menuRef}
-      className="absolute right-0 top-9 w-36 bg-white rounded-xl shadow-lg z-50 overflow-hidden border border-[#EEF2EC]"
+      className="fixed w-36 bg-white rounded-xl shadow-lg z-[100] overflow-hidden border border-[#EEF2EC]"
+      style={{ top, left }}
       onClick={e => e.stopPropagation()}
     >
       <button
@@ -259,7 +299,8 @@ function SessionMenu({ onRename, onDelete, onClose }) {
       >
         <span>🗑️</span> Delete
       </button>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -484,6 +525,15 @@ function JournalView({ user, sessionId }) {
   const [loading,    setLoading]    = useState(true);
   const textRef = useRef(null);
 
+  // ── Clear-entry confirmation (today/selected editor) ───────────────────────
+  // Two-step confirm only when something is actually persisted server-side;
+  // clearing an unsaved draft just wipes the textarea immediately.
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const clearConfirmTimeoutRef = useRef(null);
+
+  // ── Mobile calendar toggle ──────────────────────────────────────────────────
+  const [showMobileCalendar, setShowMobileCalendar] = useState(false);
+
   const [viewingEntry, setViewingEntry] = useState(null);
   const [isClosing,    setIsClosing]    = useState(false);
   const [pastIsEditing,   setPastIsEditing]   = useState(false);
@@ -493,6 +543,10 @@ function JournalView({ user, sessionId }) {
   const [pastSaveError,   setPastSaveError]   = useState('');
   const pastEditRef = useRef(null);
 
+  // ── Clear-entry confirmation (past-entry edit modal) ───────────────────────
+  const [pastClearConfirm, setPastClearConfirm] = useState(false);
+  const pastClearConfirmTimeoutRef = useRef(null);
+
   const [showPastPanel,  setShowPastPanel]  = useState(false);
   const [closingPanel,   setClosingPanel]   = useState(false);
 
@@ -501,6 +555,8 @@ function JournalView({ user, sessionId }) {
     setPastSavedFlash(false);
     setPastSaveError('');
     setPastIsEditing(false);
+    setPastClearConfirm(false);
+    clearTimeout(pastClearConfirmTimeoutRef.current);
     setViewingEntry({ date, text });
     setPastEditText(text);
   };
@@ -551,40 +607,96 @@ function JournalView({ user, sessionId }) {
   useEffect(() => {
     setDraft(entries[selected]?.text ?? '');
     setSaveError('');
+    setClearConfirm(false);
+    clearTimeout(clearConfirmTimeoutRef.current);
     setTimeout(() => textRef.current?.focus(), 80);
   }, [selected, entries]);
 
+  // Clean up any pending confirm timeouts on unmount.
+  useEffect(() => {
+    return () => {
+      clearTimeout(clearConfirmTimeoutRef.current);
+      clearTimeout(pastClearConfirmTimeoutRef.current);
+    };
+  }, []);
+
+  // ── FIXED: saveEntryForDate ─────────────────────────────────────────────────
+  // POST for new entries no longer sends session_id when null (avoids FK errors).
+  // Response handling tries resData.data first, then resData directly, so it
+  // works regardless of whether the backend wraps the record or returns it bare.
   const saveEntryForDate = async (date, text) => {
     if (!text.trim()) return { ok: false, error: 'Nothing to save yet.' };
     const existing = entries[date];
     try {
       let response;
       if (existing?.id) {
+        // ── UPDATE existing entry ─────────────────────────────────────────────
         response = await fetch(`${BACKEND_URL}/journals/${existing.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ user_id: user?.id, content: text })
         });
       } else {
+        // ── CREATE new entry ──────────────────────────────────────────────────
+        // Only attach session_id when we have a real one — passing null can
+        // trigger a FK constraint violation on some backends.
+        const payload = {
+          user_id:    user?.id,
+          entry_date: date,
+          content:    text,
+        };
+        if (sessionId) payload.session_id = sessionId;
+
         response = await fetch(`${BACKEND_URL}/journals/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: user?.id, session_id: sessionId ?? null, entry_date: date, content: text })
+          body: JSON.stringify(payload)
         });
       }
+
       const resData = await response.json().catch(() => ({}));
+
       if (response.ok) {
-        const savedItem = resData.data;
-        setEntries(prev => ({ ...prev, [date]: { id: savedItem?.id ?? existing?.id, text } }));
+        // Support both { data: { id } } and bare { id } response shapes
+        const savedItem = resData.data ?? resData;
+        const savedId   = savedItem?.id ?? savedItem?.journal_id ?? existing?.id;
+        setEntries(prev => ({ ...prev, [date]: { id: savedId, text } }));
         return { ok: true, error: '' };
       } else {
-        const msg = typeof resData.detail === 'string' ? resData.detail : `Save failed (status ${response.status}).`;
-        console.error("Journal save failed:", resData.detail || response.status);
+        const msg =
+          typeof resData.detail  === 'string' ? resData.detail  :
+          typeof resData.message === 'string' ? resData.message :
+          `Save failed (status ${response.status}).`;
+        console.error("Journal save failed:", resData, response.status);
         return { ok: false, error: msg };
       }
     } catch (err) {
       console.error("Journal save error:", err);
       return { ok: false, error: 'Network error — could not reach the server.' };
+    }
+  };
+
+  // ── NEW: deleteEntryById ────────────────────────────────────────────────────
+  // Shared helper for clearing a persisted entry from the backend. Returns
+  // { ok, error } the same shape as saveEntryForDate so callers can handle
+  // both consistently.
+  const deleteEntryById = async (id) => {
+    try {
+      // Backend's DELETE route checks entry ownership, so user_id is required
+      // as a query param here (it's a plain scalar param on the FastAPI side,
+      // not a body model).
+      const response = await fetch(`${BACKEND_URL}/journals/${id}?user_id=${user?.id}`, { method: "DELETE" });
+      if (response.ok) return { ok: true, error: '' };
+      const resData = await response.json().catch(() => ({}));
+      const msg =
+        typeof resData.detail  === 'string' ? resData.detail  :
+        typeof resData.message === 'string' ? resData.message :
+        `Could not clear entry (status ${response.status}).`;
+      console.error("Journal clear failed:", resData, response.status);
+      return { ok: false, error: msg };
+    } catch (err) {
+      console.error("Journal clear error:", err);
+      return { ok: false, error: 'Network error — could not clear entry.' };
     }
   };
 
@@ -596,6 +708,46 @@ function JournalView({ user, sessionId }) {
     if (ok) {
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2200);
+    } else {
+      setSaveError(error);
+    }
+    setSaving(false);
+  };
+
+  // ── NEW: handleClearEntry ───────────────────────────────────────────────────
+  // Wipes the current page completely. If nothing has been saved yet, this
+  // just clears the textarea. If a saved entry exists, the first click arms
+  // a short confirmation window (auto-disarms after 3s) and the second click
+  // deletes it from the backend and removes it from local state too.
+  const handleClearEntry = async () => {
+    const existing = entries[selected];
+
+    if (!existing?.id) {
+      setDraft('');
+      setSaveError('');
+      setClearConfirm(false);
+      return;
+    }
+
+    if (!clearConfirm) {
+      setClearConfirm(true);
+      clearTimeout(clearConfirmTimeoutRef.current);
+      clearConfirmTimeoutRef.current = setTimeout(() => setClearConfirm(false), 3000);
+      return;
+    }
+
+    clearTimeout(clearConfirmTimeoutRef.current);
+    setClearConfirm(false);
+    setSaving(true);
+    setSaveError('');
+
+    const { ok, error } = await deleteEntryById(existing.id);
+    if (ok) {
+      setEntries(prev => {
+        const { [selected]: _removed, ...rest } = prev;
+        return rest;
+      });
+      setDraft('');
     } else {
       setSaveError(error);
     }
@@ -616,6 +768,46 @@ function JournalView({ user, sessionId }) {
       setPastSaveError(error);
     }
     setPastSaving(false);
+  };
+
+  // ── NEW: handleClearPastEntry ───────────────────────────────────────────────
+  // Same two-step confirm pattern as handleClearEntry, but for a past page
+  // opened from the "Past Entries" panel. Past entries are always persisted
+  // (they only ever appear here once saved), so this always confirms first.
+  // Once cleared there's nothing left to show, so the modal closes itself.
+  const handleClearPastEntry = async () => {
+    if (!viewingEntry) return;
+    const existing = entries[viewingEntry.date];
+
+    if (!pastClearConfirm) {
+      setPastClearConfirm(true);
+      clearTimeout(pastClearConfirmTimeoutRef.current);
+      pastClearConfirmTimeoutRef.current = setTimeout(() => setPastClearConfirm(false), 3000);
+      return;
+    }
+
+    clearTimeout(pastClearConfirmTimeoutRef.current);
+    setPastClearConfirm(false);
+
+    if (!existing?.id) {
+      closePastEntry();
+      return;
+    }
+
+    setPastSaving(true);
+    setPastSaveError('');
+    const { ok, error } = await deleteEntryById(existing.id);
+    if (ok) {
+      setEntries(prev => {
+        const { [viewingEntry.date]: _removed, ...rest } = prev;
+        return rest;
+      });
+      setPastSaving(false);
+      closePastEntry();
+    } else {
+      setPastSaveError(error);
+      setPastSaving(false);
+    }
   };
 
   const daysInMonth  = new Date(calYear, calMonth + 1, 0).getDate();
@@ -675,73 +867,77 @@ function JournalView({ user, sessionId }) {
   const dustyRuleLines = 'repeating-linear-gradient(transparent, transparent 31px, #E2D6B8 31px, #E2D6B8 32px)';
   const dustyMargin = 'rgba(176,92,78,0.28)';
 
+  // ── Shared calendar grid JSX (used by both desktop sidebar and mobile panel) ─
+  const CalendarGrid = ({ onSelectDate }) => (
+    <div
+      className="bg-white rounded-2xl overflow-hidden"
+      style={{ boxShadow: '0 2px 12px rgba(95,85,77,0.08)', border: '1px solid rgba(183,201,187,0.3)' }}
+    >
+      <div className="flex items-center justify-between px-2.5 py-2 bg-[#EEF2EC]">
+        <button onClick={prevMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/70 text-[#5F554D]/60 hover:text-[#5F554D] transition-all text-xs font-bold">‹</button>
+        <div className="text-center leading-tight">
+          <p className="text-[10px] font-bold text-[#5F554D] tracking-wide uppercase">{MONTHS_SHORT[calMonth]}</p>
+          <p className="text-[9px] text-[#5F554D]/40 font-medium">{calYear}</p>
+        </div>
+        <button onClick={nextMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/70 text-[#5F554D]/60 hover:text-[#5F554D] transition-all text-xs font-bold">›</button>
+      </div>
+      <div className="grid grid-cols-7 px-2 pt-2 pb-0.5">
+        {CAL_DAYS.map((d, i) => <div key={i} className="text-center text-[8px] font-bold text-[#5F554D]/30 uppercase">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-x-1.5 gap-y-px px-2 pb-2">
+        {Array.from({ length: firstWeekday }).map((_, i) => <div key={`e${i}`} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+          const ds     = cellDate(day);
+          const future = ds > todayStr;
+          const hasE   = hasEntry(day);
+          const sel    = isSelected(day);
+          const tod    = isToday(day);
+          return (
+            <button
+              key={day}
+              disabled={future}
+              onClick={() => { setSelected(ds); onSelectDate && onSelectDate(); }}
+              title={hasE ? 'Has entry' : undefined}
+              className={`relative flex flex-col items-center justify-center h-[22px] w-full rounded-lg text-[9px] font-medium transition-all ${
+                future ? 'opacity-20 cursor-not-allowed text-[#5F554D]/30' :
+                sel    ? 'bg-[#B7C9BB] text-[#5F554D] font-bold shadow-sm' :
+                tod    ? 'bg-[#F5D6C6] text-[#5F554D] font-bold' :
+                hasE   ? 'text-[#5F554D] font-bold hover:bg-[#EEF2EC]' :
+                         'text-[#5F554D]/50 hover:bg-[#EEF2EC]'
+              }`}
+            >
+              {day}
+              {hasE && !sel && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-[3px] h-[3px] rounded-full bg-[#B7C9BB]" />}
+            </button>
+          );
+        })}
+      </div>
+      <div className="border-t border-[#EEF2EC] px-2.5 py-2 space-y-1">
+        {[['#F5D6C6','Today'],['#B7C9BB','Selected']].map(([color, label]) => (
+          <div key={label} className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-md flex-shrink-0 inline-block" style={{ background: color }} />
+            <span className="text-[8px] text-[#5F554D]/40 font-medium">{label}</span>
+          </div>
+        ))}
+        <div className="flex items-center gap-1.5">
+          <span className="w-[5px] h-[5px] rounded-full bg-[#B7C9BB] flex-shrink-0 inline-block ml-[2px]" />
+          <span className="text-[8px] text-[#5F554D]/40 font-medium">Has entry</span>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex-1 flex overflow-hidden bg-[#FAF7F2]">
+      {/* ── Desktop calendar sidebar ─────────────────────────────────────────── */}
       <div
         className="hidden md:flex flex-col flex-shrink-0 p-3 border-r border-[#EEF2EC]"
         style={{ width: 210 }}
       >
-        <div
-          className="bg-white rounded-2xl overflow-hidden"
-          style={{
-            boxShadow: '0 2px 12px rgba(95,85,77,0.08)',
-            border: '1px solid rgba(183,201,187,0.3)',
-          }}
-        >
-          <div className="flex items-center justify-between px-2.5 py-2 bg-[#EEF2EC]">
-            <button onClick={prevMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/70 text-[#5F554D]/60 hover:text-[#5F554D] transition-all text-xs font-bold">‹</button>
-            <div className="text-center leading-tight">
-              <p className="text-[10px] font-bold text-[#5F554D] tracking-wide uppercase">{MONTHS_SHORT[calMonth]}</p>
-              <p className="text-[9px] text-[#5F554D]/40 font-medium">{calYear}</p>
-            </div>
-            <button onClick={nextMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/70 text-[#5F554D]/60 hover:text-[#5F554D] transition-all text-xs font-bold">›</button>
-          </div>
-          <div className="grid grid-cols-7 px-2 pt-2 pb-0.5">
-            {CAL_DAYS.map((d, i) => <div key={i} className="text-center text-[8px] font-bold text-[#5F554D]/30 uppercase">{d}</div>)}
-          </div>
-          <div className="grid grid-cols-7 gap-x-1.5 gap-y-px px-2 pb-2">
-            {Array.from({ length: firstWeekday }).map((_, i) => <div key={`e${i}`} />)}
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
-              const ds     = cellDate(day);
-              const future = ds > todayStr;
-              const hasE   = hasEntry(day);
-              const sel    = isSelected(day);
-              const tod    = isToday(day);
-              return (
-                <button
-                  key={day}
-                  disabled={future}
-                  onClick={() => setSelected(ds)}
-                  title={hasE ? 'Has entry' : undefined}
-                  className={`relative flex flex-col items-center justify-center h-[22px] w-full rounded-lg text-[9px] font-medium transition-all ${
-                    future ? 'opacity-20 cursor-not-allowed text-[#5F554D]/30' :
-                    sel    ? 'bg-[#B7C9BB] text-[#5F554D] font-bold shadow-sm' :
-                    tod    ? 'bg-[#F5D6C6] text-[#5F554D] font-bold' :
-                    hasE   ? 'text-[#5F554D] font-bold hover:bg-[#EEF2EC]' :
-                             'text-[#5F554D]/50 hover:bg-[#EEF2EC]'
-                  }`}
-                >
-                  {day}
-                  {hasE && !sel && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-[3px] h-[3px] rounded-full bg-[#B7C9BB]" />}
-                </button>
-              );
-            })}
-          </div>
-          <div className="border-t border-[#EEF2EC] px-2.5 py-2 space-y-1">
-            {[['#F5D6C6','Today'],['#B7C9BB','Selected']].map(([color, label]) => (
-              <div key={label} className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-md flex-shrink-0 inline-block" style={{ background: color }} />
-                <span className="text-[8px] text-[#5F554D]/40 font-medium">{label}</span>
-              </div>
-            ))}
-            <div className="flex items-center gap-1.5">
-              <span className="w-[5px] h-[5px] rounded-full bg-[#B7C9BB] flex-shrink-0 inline-block ml-[2px]" />
-              <span className="text-[8px] text-[#5F554D]/40 font-medium">Has entry</span>
-            </div>
-          </div>
-        </div>
+        <CalendarGrid />
       </div>
 
+      {/* ── Main notebook area ───────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 p-4 overflow-hidden">
         <div
           className="flex-1 flex flex-col overflow-hidden rounded-2xl"
@@ -753,6 +949,7 @@ function JournalView({ user, sessionId }) {
         >
           <SpiralRings count={13} />
 
+          {/* ── Notebook header ─────────────────────────────────────────────── */}
           <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[#EEF2EC]/80">
             <div>
               <p className="text-[10px] font-bold text-[#5F554D]/40 uppercase tracking-widest mb-0.5">
@@ -764,18 +961,42 @@ function JournalView({ user, sessionId }) {
             <div className="flex items-center gap-2">
               {loading && <span className="text-[10px] text-[#5F554D]/40 animate-pulse">Loading…</span>}
 
+              {/* Mobile calendar toggle — hidden on md+ where sidebar is visible */}
+              <button
+                onClick={() => setShowMobileCalendar(v => !v)}
+                className="md:hidden flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#EEF2EC] hover:bg-[#D9E8DB] text-[#5F554D] text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                aria-label="Toggle calendar"
+              >
+                <span className="text-xs">📅</span>
+                {showMobileCalendar ? 'Hide' : 'Date'}
+              </button>
+
               <button
                 onClick={openPastPanel}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#EEF2EC] hover:bg-[#D9E8DB] text-[#5F554D] text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
               >
                 <span className="text-xs">📋</span>
-                Past Entries
+                <span className="hidden sm:inline">Past Entries</span>
+                <span className="sm:hidden">Past</span>
                 {pastEntries.length > 0 && (
                   <span className="bg-[#5F554D] text-white rounded-full px-1.5 py-0 text-[8px] font-bold leading-4">
                     {pastEntries.length}
                   </span>
                 )}
               </button>
+
+              {!isFuture && (draft.trim().length > 0 || !!entries[selected]) && (
+                <button
+                  onClick={handleClearEntry}
+                  disabled={saving}
+                  title={entries[selected] ? 'Delete this saved entry' : 'Clear the draft'}
+                  className={`px-3 py-1.5 font-bold text-[10px] uppercase tracking-wider rounded-full transition-all active:scale-95 disabled:opacity-40 ${
+                    clearConfirm ? 'bg-red-500 text-white' : 'bg-[#EEF2EC] text-[#5F554D]/60 hover:bg-red-50 hover:text-red-500'
+                  }`}
+                >
+                  {clearConfirm ? 'Confirm clear?' : '🗑 Clear'}
+                </button>
+              )}
 
               {!isFuture && (
                 <button
@@ -791,6 +1012,14 @@ function JournalView({ user, sessionId }) {
             </div>
           </div>
 
+          {/* ── Mobile calendar panel (collapsible) ─────────────────────────── */}
+          {showMobileCalendar && (
+            <div className="md:hidden flex-shrink-0 px-4 pt-3 pb-3 border-b border-[#EEF2EC]/80 bg-[#FEFDF7]">
+              <CalendarGrid onSelectDate={() => setShowMobileCalendar(false)} />
+            </div>
+          )}
+
+          {/* ── Lined writing area ───────────────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto relative">
             <div className="absolute top-0 bottom-0 pointer-events-none" style={{ left: 64, width: 1, background: 'rgba(255,150,150,0.28)' }} />
             <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(transparent, transparent 31px, #E6EBE3 31px, #E6EBE3 32px)', backgroundPosition: '0 8px' }} />
@@ -816,6 +1045,7 @@ function JournalView({ user, sessionId }) {
         </div>
       </div>
 
+      {/* ── Past entries panel ───────────────────────────────────────────────── */}
       {showPastPanel && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6"
@@ -906,6 +1136,7 @@ function JournalView({ user, sessionId }) {
         </div>
       )}
 
+      {/* ── View past entry modal ────────────────────────────────────────────── */}
       {viewingEntry && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-6"
@@ -961,7 +1192,17 @@ function JournalView({ user, sessionId }) {
               {pastIsEditing ? (
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => { setPastIsEditing(false); setPastEditText(viewingEntry.text); setPastSaveError(''); }}
+                    onClick={handleClearPastEntry}
+                    disabled={pastSaving}
+                    title="Delete this saved page"
+                    className={`px-3 py-1.5 font-bold text-[10px] uppercase tracking-wider rounded-full transition-all active:scale-95 disabled:opacity-40 ${
+                      pastClearConfirm ? 'bg-red-500 text-white' : 'bg-[#E6DAC0] text-[#5F4F3A]/70 hover:bg-red-50 hover:text-red-500'
+                    }`}
+                  >
+                    {pastClearConfirm ? 'Confirm clear?' : '🗑 Clear'}
+                  </button>
+                  <button
+                    onClick={() => { setPastIsEditing(false); setPastEditText(viewingEntry.text); setPastSaveError(''); setPastClearConfirm(false); clearTimeout(pastClearConfirmTimeoutRef.current); }}
                     className="px-3 py-1.5 font-bold text-[10px] uppercase tracking-wider rounded-full bg-[#E6DAC0] text-[#5F4F3A]/70 hover:bg-[#D9C9A4] transition-all active:scale-95"
                   >
                     Cancel
@@ -1048,12 +1289,15 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   const manualRenameRef = useRef(new Set());
   const sessionConvoRef = useRef({});
+  const sessionActivityRef = useRef({}); // { [sessionId]: lastTouchedMs }
 
   const [hoveredSession,  setHoveredSession]  = useState(null);
   const [openMenuSession, setOpenMenuSession] = useState(null);
+  const [menuAnchorRect,  setMenuAnchorRect]  = useState(null);
   const [renamingSession, setRenamingSession] = useState(null);
   const [renameValue,     setRenameValue]     = useState('');
   const renameInputRef = useRef(null);
+  const recentJourneysRef = useRef(null);
 
   const [doorOpen,       setDoorOpen]       = useState(false);
   const [welcomeComplete,setWelcomeComplete]= useState(false);
@@ -1116,9 +1360,32 @@ export default function Dashboard({ user, onLogout }) {
         const res = await fetch(`${BACKEND_URL}/sessions/user/${user.id}`);
         const data = await res.json();
         if (res.ok && data.sessions) {
-          const sorted = [...data.sessions].sort((a, b) => b.id - a.id);
+          // Load persisted "last touched" times so a chat you were just
+          // talking in stays at the top of Recent Journeys even after a
+          // reload — id-only sorting would otherwise undo that every time.
+          const activity = loadSessionActivity(user.id);
+          sessionActivityRef.current = activity;
+
+          const sorted = [...data.sessions].sort((a, b) => {
+            // Real activity timestamps (ms since epoch, ~10^12+) are always
+            // larger than plain ids, so any touched chat naturally outranks
+            // an untouched one; among untouched chats this falls back to
+            // newest-id-first, same as before.
+            const aScore = activity[a.id] ?? a.id;
+            const bScore = activity[b.id] ?? b.id;
+            return bScore - aScore;
+          });
           setSessions(sorted);
-          if (sorted.length > 0) setActiveSessionId(sorted[0].id);
+
+          // Restore the chat you were on if this is a page reload within the
+          // same browser tab — but NOT on a fresh login/signup, since
+          // handleLogout clears this key, so a brand-new session always
+          // starts on "New Chat" instead of jumping to the latest one.
+          const storedId = sessionStorage.getItem(SESSION_STORAGE_KEY(user.id));
+          const stillExists = storedId && sorted.some(s => String(s.id) === String(storedId));
+          if (stillExists) {
+            setActiveSessionId(Number(storedId));
+          }
         }
       } catch (err) {
         console.error("Failed to load sessions:", err);
@@ -1126,6 +1393,16 @@ export default function Dashboard({ user, onLogout }) {
     };
     if (user?.id) loadSessions();
   }, [user?.id]);
+
+  // Keep the current chat restorable across a page reload (same tab only).
+  useEffect(() => {
+    if (!user?.id) return;
+    if (activeSessionId) {
+      sessionStorage.setItem(SESSION_STORAGE_KEY(user.id), String(activeSessionId));
+    } else {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY(user.id));
+    }
+  }, [activeSessionId, user?.id]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -1166,6 +1443,25 @@ export default function Dashboard({ user, onLogout }) {
 
   const handleStartNewChat = () => { setActiveSessionId(null); setMessages([]); setChatMood('calm'); };
 
+  // Records that a chat was just used: moves it to the top of Recent
+  // Journeys in memory AND persists the timestamp to localStorage, so the
+  // order survives a page reload instead of reverting to id-order.
+  const touchSessionActivity = useCallback((id) => {
+    const now = Date.now();
+    sessionActivityRef.current = { ...sessionActivityRef.current, [id]: now };
+    saveSessionActivity(user.id, sessionActivityRef.current);
+
+    setSessions(prev => {
+      const idx = prev.findIndex(s => s.id === id);
+      if (idx <= 0) return prev; // already at top, or not found
+      const updated = [...prev];
+      const [item] = updated.splice(idx, 1);
+      updated.unshift(item);
+      sessionsRef.current = updated;
+      return updated;
+    });
+  }, [user.id]);
+
   const sendChatMessage = useCallback(async (messageText) => {
     if (!messageText.trim()) return;
     let currentSessionId = activeSessionId;
@@ -1183,8 +1479,13 @@ export default function Dashboard({ user, onLogout }) {
           setActiveSessionId(currentSessionId);
           setSessions(prev => [sessData.session[0], ...prev]);
           sessionsRef.current = [sessData.session[0], ...sessionsRef.current];
+          touchSessionActivity(currentSessionId);
         } else { console.error("Could not create chat session"); return; }
       } catch (err) { console.error("Session creation failed:", err); return; }
+    } else {
+      // Existing chat — bring it to the top of Recent Journeys right away,
+      // and remember that timestamp so it's still on top after a reload.
+      touchSessionActivity(currentSessionId);
     }
 
     if (!sessionConvoRef.current[currentSessionId]) sessionConvoRef.current[currentSessionId] = [];
@@ -1221,7 +1522,7 @@ export default function Dashboard({ user, onLogout }) {
     } finally {
       setIsTyping(false);
     }
-  }, [activeSessionId, user.id]);
+  }, [activeSessionId, user.id, touchSessionActivity]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -1242,6 +1543,11 @@ export default function Dashboard({ user, onLogout }) {
       await fetch(`${BACKEND_URL}/sessions/${sessId}`, { method: "DELETE" });
     } catch (_) {}
     setSessions(prev => prev.filter(s => s.id !== sessId));
+    if (sessionActivityRef.current[sessId] !== undefined) {
+      const { [sessId]: _removed, ...rest } = sessionActivityRef.current;
+      sessionActivityRef.current = rest;
+      saveSessionActivity(user.id, rest);
+    }
     if (activeSessionId === sessId) handleStartNewChat();
   };
 
@@ -1278,6 +1584,7 @@ export default function Dashboard({ user, onLogout }) {
     if (user?.logId) {
       try { await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: "POST" }); } catch (_) {}
     }
+    if (user?.id) sessionStorage.removeItem(SESSION_STORAGE_KEY(user.id));
     onLogout();
   };
 
@@ -1310,6 +1617,7 @@ export default function Dashboard({ user, onLogout }) {
       >
         {sidebarOpen && (
           <div className="flex flex-col h-full overflow-hidden">
+
             {/* ── Fixed top: logo + nav ── */}
             <div className="flex-shrink-0 px-5 pt-5 space-y-5">
               <div className="flex flex-col items-center gap-1.5 px-1 pt-3 pb-2">
@@ -1339,86 +1647,87 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             </div>
 
-            {/* ── Scrollable middle: recent chats + mood widget ── */}
-            <div className="flex-1 overflow-y-auto px-5 py-3 min-h-0">
-              {/* ── RECENT JOURNEYS ── */}
-              <div className="mb-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#5F554D]/40 mb-2.5 px-1">Recent Journeys</h4>
-                <div className="space-y-1.5">
-                  {sessions.length === 0 ? (
-                    <p className="text-xs text-[#5F554D]/50 px-1">No past sessions yet</p>
-                  ) : sessions.map(sess => (
-                    <div
-                      key={sess.id}
-                      className="relative"
-                      onMouseEnter={() => setHoveredSession(sess.id)}
-                      onMouseLeave={() => { if (openMenuSession !== sess.id) setHoveredSession(null); }}
-                    >
-                      {renamingSession === sess.id ? (
-                        <div className="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2.5 shadow-sm ring-1 ring-[#B7C9BB]">
-                          <input
-                            ref={renameInputRef}
-                            value={renameValue}
-                            onChange={e => setRenameValue(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter')  handleConfirmRename(sess.id);
-                              if (e.key === 'Escape') setRenamingSession(null);
-                            }}
-                            className="flex-1 bg-transparent outline-none text-xs text-[#5F554D] font-medium min-w-0"
-                            placeholder="Chat name..."
-                          />
-                          <button onClick={() => handleConfirmRename(sess.id)} className="text-[#5F554D]/60 hover:text-[#5F554D] text-xs font-bold px-0.5 flex-shrink-0">✓</button>
-                          <button onClick={() => setRenamingSession(null)}      className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs px-0.5 flex-shrink-0">✕</button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { setView('chat'); setActiveSessionId(sess.id); if (window.innerWidth < 768) setSidebarOpen(false); }}
-                          className={`w-full p-3 bg-white rounded-xl text-xs font-medium cursor-pointer hover:bg-white/90 transition-all flex items-center gap-2 text-[#5F554D] text-left pr-9 ${activeSessionId === sess.id ? 'shadow-sm ring-1 ring-[#B7C9BB]' : ''}`}
-                        >
-                          <span className="flex-shrink-0 text-base">💬</span>
-                          <span className="truncate flex-1 min-w-0 leading-snug">{sess.title || `Session ${sess.id}`}</span>
-                        </button>
-                      )}
+            {/* ── Recent Journeys: sticky header + conditionally scrollable list ── */}
+            {/* The header and the "Leave Space" footer never scroll away — only   */}
+            {/* the chat list itself scrolls, and only once there are a few chats. */}
+            <div className="flex-1 flex flex-col px-5 pt-3 pb-2 min-h-0 overflow-hidden">
+              <h4 className="flex-shrink-0 text-xs font-semibold uppercase tracking-wider text-[#5F554D]/40 mb-2.5 px-1">
+                Recent Journeys
+              </h4>
 
-                      {renamingSession !== sess.id && (hoveredSession === sess.id || openMenuSession === sess.id) && (
-                        <button
-                          onClick={e => { e.stopPropagation(); setOpenMenuSession(p => p === sess.id ? null : sess.id); }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-lg bg-[#EEF2EC] hover:bg-[#D9E8DB] text-[#5F554D]/50 hover:text-[#5F554D] transition-all z-10"
-                          title="More options"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
-                            <circle cx="6.5" cy="2"   r="1.2" />
-                            <circle cx="6.5" cy="6.5" r="1.2" />
-                            <circle cx="6.5" cy="11"  r="1.2" />
-                          </svg>
-                        </button>
-                      )}
-
-                      {openMenuSession === sess.id && (
-                        <SessionMenu
-                          onRename={() => handleStartRename(sess)}
-                          onDelete={() => handleDeleteSession(sess.id)}
-                          onClose={() => { setOpenMenuSession(null); setHoveredSession(null); }}
+              <div
+                ref={recentJourneysRef}
+                onScroll={() => { if (openMenuSession) { setOpenMenuSession(null); setMenuAnchorRect(null); } }}
+                className={`recent-journeys-scroll space-y-1.5 ${sessions.length > 2 ? 'flex-1 overflow-y-auto min-h-0 pr-1.5' : 'flex-shrink-0'}`}
+              >
+                {sessions.length === 0 ? (
+                  <p className="text-xs text-[#5F554D]/50 px-1">No past sessions yet</p>
+                ) : sessions.map(sess => (
+                  <div
+                    key={sess.id}
+                    className="relative"
+                    onMouseEnter={() => setHoveredSession(sess.id)}
+                    onMouseLeave={() => { if (openMenuSession !== sess.id) setHoveredSession(null); }}
+                  >
+                    {renamingSession === sess.id ? (
+                      <div className="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2.5 shadow-sm ring-1 ring-[#B7C9BB]">
+                        <input
+                          ref={renameInputRef}
+                          value={renameValue}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter')  handleConfirmRename(sess.id);
+                            if (e.key === 'Escape') setRenamingSession(null);
+                          }}
+                          className="flex-1 bg-transparent outline-none text-xs text-[#5F554D] font-medium min-w-0"
+                          placeholder="Chat name..."
                         />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+                        <button onClick={() => handleConfirmRename(sess.id)} className="text-[#5F554D]/60 hover:text-[#5F554D] text-xs font-bold px-0.5 flex-shrink-0">✓</button>
+                        <button onClick={() => setRenamingSession(null)}      className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs px-0.5 flex-shrink-0">✕</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setView('chat'); setActiveSessionId(sess.id); if (window.innerWidth < 768) setSidebarOpen(false); }}
+                        className={`w-full p-3 bg-white rounded-xl text-xs font-medium cursor-pointer hover:bg-white/90 transition-all flex items-center gap-2 text-[#5F554D] text-left pr-9 ${activeSessionId === sess.id ? 'shadow-sm ring-1 ring-[#B7C9BB]' : ''}`}
+                      >
+                        <span className="flex-shrink-0 text-base">💬</span>
+                        <span className="truncate flex-1 min-w-0 leading-snug">{sess.title || `Session ${sess.id}`}</span>
+                      </button>
+                    )}
 
-              <div className="bg-white rounded-2xl p-4">
-                <p className="text-xs font-semibold text-[#5F554D]/70 uppercase tracking-wide mb-2">How are you feeling?</p>
-                <div className="flex justify-between">
-                  {['😞','😐','🙂','😊','🌟'].map((emoji, i) => (
-                    <button key={i} className="text-xl hover:scale-125 active:scale-110 transition-transform p-1"
-                      onClick={() => {
-                        setView('chat');
-                        if (window.innerWidth < 768) setSidebarOpen(false);
-                        sendChatMessage(`I'm feeling ${['really low','okay','alright','good','great'][i]} today ${emoji}`);
-                      }}
-                    >{emoji}</button>
-                  ))}
-                </div>
+                    {renamingSession !== sess.id && (hoveredSession === sess.id || openMenuSession === sess.id) && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (openMenuSession === sess.id) {
+                            setOpenMenuSession(null);
+                            setMenuAnchorRect(null);
+                          } else {
+                            setMenuAnchorRect(e.currentTarget.getBoundingClientRect());
+                            setOpenMenuSession(sess.id);
+                          }
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-lg bg-[#EEF2EC] hover:bg-[#D9E8DB] text-[#5F554D]/50 hover:text-[#5F554D] transition-all z-10"
+                        title="More options"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+                          <circle cx="6.5" cy="2"   r="1.2" />
+                          <circle cx="6.5" cy="6.5" r="1.2" />
+                          <circle cx="6.5" cy="11"  r="1.2" />
+                        </svg>
+                      </button>
+                    )}
+
+                    {openMenuSession === sess.id && (
+                      <SessionMenu
+                        anchorRect={menuAnchorRect}
+                        onRename={() => handleStartRename(sess)}
+                        onDelete={() => handleDeleteSession(sess.id)}
+                        onClose={() => { setOpenMenuSession(null); setMenuAnchorRect(null); setHoveredSession(null); }}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1432,6 +1741,18 @@ export default function Dashboard({ user, onLogout }) {
                 <span className="block text-xs text-[#5F554D]/50 mt-0.5">Take a break, breathe, reset.</span>
               </button>
             </div>
+
+            <style>{`
+              .recent-journeys-scroll::-webkit-scrollbar { width: 5px; }
+              .recent-journeys-scroll::-webkit-scrollbar-track { background: transparent; }
+              .recent-journeys-scroll::-webkit-scrollbar-thumb {
+                background: rgba(183,201,187,0.7);
+                border-radius: 999px;
+              }
+              .recent-journeys-scroll::-webkit-scrollbar-thumb:hover { background: rgba(183,201,187,1); }
+              .recent-journeys-scroll { scrollbar-width: thin; scrollbar-color: rgba(183,201,187,0.7) transparent; }
+            `}</style>
+
           </div>
         )}
       </div>
