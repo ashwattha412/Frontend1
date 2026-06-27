@@ -1,0 +1,109 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Dori — theme variables
+   Light mode is the default (:root). Dark mode overrides live under
+   [data-theme="dark"], which Dashboard.jsx sets on <html> when toggled via
+   the lantern (top-right) or the switch in the profile dropdown.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* App canvas */
+  --bg-app: #FAF7F2;
+
+  /* Sidebar */
+  --bg-sidebar: #EEF2EC;
+  --bg-active-tab: #F5D6C6;
+  --bg-recent-item: #FFFFFF;
+
+  /* Main chat viewport gradient (3 stops) */
+  --bg-chat-top: #FAF7F2;
+  --bg-chat-mid: #FAF7F2;
+  --bg-chat-bottom: #FAF7F2;
+
+  /* Chat input + prompt chips */
+  --input-glow: #F5D6C6;
+  --bg-prompt-chip: #FFFFFF;
+
+  /* Text */
+  --text-primary: #5F554D;
+  --text-secondary: rgba(95, 85, 77, 0.6);
+
+  /* Floating star/leaf accents */
+  --accent-star: #B7C9BB;
+
+  /* Lantern (theme toggle) glow */
+  --lantern-glow: #FFE888;
+}
+
+[data-theme="dark"] {
+  /* App canvas */
+  --bg-app: #060F2B;
+
+  /* Sidebar */
+  --bg-sidebar: #2B133B;
+  --bg-active-tab: #045258;
+  --bg-recent-item: #190B24;
+
+  /* Main chat viewport gradient (3 stops) */
+  --bg-chat-top: #060F2B;
+  --bg-chat-mid: #1E123B;
+  --bg-chat-bottom: #3A195E;
+
+  /* Chat input + prompt chips */
+  --input-glow: #0A97B0;
+  --bg-prompt-chip: #1C0F28;
+
+  /* Text */
+  --text-primary: #FFFFFF;
+  --text-secondary: #CCCCCC;
+
+  /* Floating star/snowflake accents */
+  --accent-star: #E2F1FF;
+
+  /* Lantern (theme toggle) glow */
+  --lantern-glow: #0A97B0;
+}
+
+/* Chat input bar: glowing focus ring using the theme's accent color */
+.dori-chat-input:focus-within {
+  border-color: var(--input-glow) !important;
+  box-shadow: 0 0 0 1px var(--input-glow), 0 0 16px color-mix(in srgb, var(--input-glow) 55%, transparent);
+}
+
+/* Floating decor (leaves in light mode / stars+snow in dark mode) get a
+   soft glow in dark mode so they "stand out brilliantly" against the gradient */
+[data-theme="dark"] .dori-floating-decor span {
+  filter: drop-shadow(0 0 4px var(--accent-star));
+}
+
+/* Slim themed scrollbar for the Recent Journeys list (kept here so it tracks
+   the active theme automatically rather than being hardcoded sage-only) */
+.recent-journeys-scroll::-webkit-scrollbar { width: 5px; }
+.recent-journeys-scroll::-webkit-scrollbar-track { background: transparent; }
+.recent-journeys-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent-star) 70%, transparent);
+  border-radius: 999px;
+}
+.recent-journeys-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-star);
+}
+.recent-journeys-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent-star) 70%, transparent) transparent;
+}
+/* ── Journal-specific additions ───────────────────────────────────────────
+   Everything else in the calendar/notebook reuses existing tokens:
+   --bg-app (page bg), --bg-sidebar (calendar header — purple in dark),
+   --bg-active-tab (Today highlight — teal/blue in dark), --bg-recent-item
+   (card/notebook bg), --text-primary, --text-secondary.
+   These three are new because light mode doesn't have an equivalent. */
+:root, [data-theme="light"] {
+  --journal-selected-bg: #B7C9BB;  /* sage, unchanged in light */
+  --journal-primary-btn: #5F554D;  /* Save/Update button, unchanged in light */
+  --journal-border: #EEF2EC;
+}
+
+[data-theme="dark"] {
+  --journal-selected-bg: #0A97B0;  /* electric blue */
+  --journal-primary-btn: #0A97B0;  /* electric blue */
+  --journal-border: rgba(255, 255, 255, 0.08);
+}

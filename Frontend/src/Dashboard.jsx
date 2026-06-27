@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import './dashboard-theme.css';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -27,46 +28,42 @@ function getGreeting(name, hasHistory) {
 }
 
 const REACTION_OPTIONS = [
-  { emoji: "🫂", label: "Comforting", mood: "Grounding" },
-  { emoji: "🌱", label: "Helpful",    mood: "Encouraging" },
-  { emoji: "❤️", label: "Relatable",  mood: "Reflective" },
-  { emoji: "✨", label: "Insightful", mood: "Reflective" },
-  { emoji: "😊", label: "Made me smile", mood: "Calm" },
+  { emoji: "🫂", label: "Comforting" },
+  { emoji: "🌱", label: "Helpful" },
+  { emoji: "❤️", label: "Relatable" },
+  { emoji: "✨", label: "Insightful" },
+  { emoji: "😊", label: "Made me smile" },
 ];
 
-const MOOD_GLOW = {
-  Calm:        "#FFE888",
-  Reflective:  "#E5D6FF",
-  Encouraging: "#FFD6C7",
-  Grounding:   "#D9E8DB",
-};
-
-const CHAT_MOOD_BG = {
-  calm:       { from: '#FAF7F2', to: '#FAF7F2' },
-  neutral:    { from: '#FAF7F2', to: '#FAF7F2' },
-  anxious:    { from: '#FAF7F2', to: '#EAE2F7' },
-  stressed:   { from: '#FAF7F2', to: '#E3EEE6' },
-  overwhelmed:{ from: '#FAF7F2', to: '#E3EEE6' },
-  sad:        { from: '#FAF7F2', to: '#F5E9E6' },
-  lonely:     { from: '#FAF7F2', to: '#F5E9E6' },
-  angry:      { from: '#FAF7F2', to: '#F1E7DC' },
-  happy:      { from: '#FAF7F2', to: '#FFF6DA' },
-  excited:    { from: '#FAF7F2', to: '#FFF6DA' },
-};
-
-function resolveEmotion(source) {
-  const raw = source?.emotion ?? source?.detected_emotion ?? source?.mood ?? null;
-  return raw ? String(raw).toLowerCase() : null;
-}
-
-// Scoped per-user so different accounts in the same browser tab don't collide,
-// and so logging out (which clears this) makes the next login start fresh.
 const SESSION_STORAGE_KEY = (userId) => `dori_active_session_${userId}`;
-
-// Tracks "last touched" timestamps per chat in localStorage (not sessionStorage,
-// since this needs to survive across reloads AND across browser sessions) so
-// Recent Journeys ordering persists instead of resetting to id-order on reload.
 const SESSION_ACTIVITY_KEY = (userId) => `dori_session_activity_${userId}`;
+
+// localStorage key that records which instance currently "owns" this user's session.
+// Used for cross-tab detection within the same browser.
+const ACTIVE_INSTANCE_KEY = (userId) => `dori_active_instance_${userId}`;
+
+// sessionStorage key for the instanceId of this tab.
+// sessionStorage survives page RELOAD but is NOT shared across tabs,
+// which is exactly what we need: reload = same instance, new tab = new instance.
+const INSTANCE_ID_SESSION_KEY = (userId) => `dori_instance_${userId}`;
+
+// Heartbeat interval. Must be well under HEARTBEAT_STALE_SECONDS (45s backend).
+const HEARTBEAT_INTERVAL_MS = 20_000;
+
+// Get or create a stable instanceId for this tab.
+// Reloading the same tab returns the SAME id → no false conflict on reload.
+// Opening a new tab returns a NEW id → correct conflict detection.
+function getOrCreateInstanceId(userId) {
+  const key = INSTANCE_ID_SESSION_KEY(userId);
+  let id = sessionStorage.getItem(key);
+  if (!id) {
+    id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem(key, id);
+  }
+  return id;
+}
 
 function loadSessionActivity(userId) {
   try {
@@ -80,9 +77,7 @@ function loadSessionActivity(userId) {
 function saveSessionActivity(userId, map) {
   try {
     localStorage.setItem(SESSION_ACTIVITY_KEY(userId), JSON.stringify(map));
-  } catch {
-    // localStorage unavailable — ordering just won't persist, not fatal.
-  }
+  } catch {}
 }
 
 const DEFAULT_TITLES = ['', 'New Chat', 'Wellness Chat Session'];
@@ -164,20 +159,29 @@ function commitAutoTitle(sessionId, newTitle, sessionsRef, setSessions, manualRe
   }).catch(err => console.error("Auto-title network error:", err));
 }
 
-const Lantern = ({ mood = "Calm", size = 34 }) => {
-  const glow = MOOD_GLOW[mood] || MOOD_GLOW.Calm;
+const Lantern = ({ darkMode = false, onClick, size = 34 }) => {
   return (
-    <div className="flex flex-col items-center select-none" title={`Mood glow: ${mood}`}>
-      <div className="w-px h-4 bg-[#5F554D]/25" />
-      <div className="rounded-t-full" style={{ width: size * 0.32, height: size * 0.18, background: '#5F554D', opacity: 0.5 }} />
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center select-none active:scale-90 transition-transform"
+      title={darkMode ? 'Click for light mode ☀️' : 'Click for dark mode 🌙'}
+      aria-label="Toggle dark mode"
+    >
+      <div className="w-px h-4" style={{ background: 'var(--text-primary)', opacity: 0.25 }} />
+      <div className="rounded-t-full" style={{ width: size * 0.32, height: size * 0.18, background: 'var(--text-primary)', opacity: 0.5 }} />
       <div
         className="rounded-2xl flex items-center justify-center transition-all duration-700 ease-out"
-        style={{ width: size, height: size * 1.15, background: glow, boxShadow: `0 0 ${size * 0.9}px ${glow}99, 0 0 ${size * 0.25}px ${glow}`, border: '1px solid rgba(95,85,77,0.25)' }}
+        style={{
+          width: size, height: size * 1.15,
+          background: 'var(--lantern-glow)',
+          boxShadow: `0 0 ${size * 0.9}px var(--lantern-glow), 0 0 ${size * 0.25}px var(--lantern-glow)`,
+          border: '1px solid rgba(95,85,77,0.25)',
+        }}
       >
         <div className="w-1.5 h-1.5 rounded-full bg-white/70" />
       </div>
-      <div className="rounded-b-full" style={{ width: size * 0.32, height: size * 0.12, background: '#5F554D', opacity: 0.5 }} />
-    </div>
+      <div className="rounded-b-full" style={{ width: size * 0.32, height: size * 0.12, background: 'var(--text-primary)', opacity: 0.5 }} />
+    </button>
   );
 };
 
@@ -220,8 +224,8 @@ const ColorWash = () => (
   </div>
 );
 
-const FloatingDecor = () => {
-  const items = [
+const FloatingDecor = ({ darkMode = false }) => {
+  const lightItems = [
     { glyph: '🍃', left: '6%',  size: 20, duration: 19, delay: 0  },
     { glyph: '✨', left: '18%', size: 11, duration: 13, delay: 2  },
     { glyph: '🌿', left: '34%', size: 16, duration: 23, delay: 5  },
@@ -230,8 +234,18 @@ const FloatingDecor = () => {
     { glyph: '🌿', left: '83%', size: 14, duration: 25, delay: 3  },
     { glyph: '✨', left: '94%', size: 12, duration: 17, delay: 6  },
   ];
+  const darkItems = [
+    { glyph: '✨', left: '6%',  size: 20, duration: 19, delay: 0  },
+    { glyph: '❄️', left: '18%', size: 12, duration: 13, delay: 2  },
+    { glyph: '⭐', left: '34%', size: 14, duration: 23, delay: 5  },
+    { glyph: '✨', left: '52%', size: 10, duration: 15, delay: 1  },
+    { glyph: '❄️', left: '68%', size: 16, duration: 21, delay: 8  },
+    { glyph: '⭐', left: '83%', size: 13, duration: 25, delay: 3  },
+    { glyph: '✨', left: '94%', size: 11, duration: 17, delay: 6  },
+  ];
+  const items = darkMode ? darkItems : lightItems;
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
+    <div className="dori-floating-decor absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
       {items.map((it, i) => (
         <span key={i} className="absolute bottom-0" style={{ left: it.left, fontSize: it.size, opacity: 0, animation: `floatDrift ${it.duration}s ease-in-out ${it.delay}s infinite` }}>{it.glyph}</span>
       ))}
@@ -248,10 +262,6 @@ const FloatingDecor = () => {
   );
 };
 
-// ─── SESSION CONTEXT MENU ─────────────────────────────────────────────────────
-// Rendered through a portal into document.body and positioned with `fixed`
-// coordinates from the trigger button's bounding rect. This keeps it from
-// getting clipped or jittering inside the scrollable "Recent Journeys" list.
 function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
   const menuRef = useRef(null);
 
@@ -272,7 +282,7 @@ function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
 
   if (!anchorRect) return null;
 
-  const MENU_WIDTH = 144; // matches w-36
+  const MENU_WIDTH = 144;
   const top  = anchorRect.bottom + 6;
   const left = Math.min(
     Math.max(8, anchorRect.right - MENU_WIDTH),
@@ -304,7 +314,6 @@ function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
   );
 }
 
-// ─── SPIRAL RINGS component ───────────────────────────────────────────────────
 function SpiralRings({ count = 13 }) {
   return (
     <div
@@ -332,7 +341,6 @@ function SpiralRings({ count = 13 }) {
   );
 }
 
-// ─── CHANGE PASSWORD MODAL ────────────────────────────────────────────────────
 function ChangePasswordModal({ user, onClose }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword,     setNewPassword]     = useState('');
@@ -382,7 +390,6 @@ function ChangePasswordModal({ user, onClose }) {
         style={{ border: '1px solid rgba(183,201,187,0.35)', animation: 'pwOpen 0.32s cubic-bezier(0.34,1.45,0.64,1) forwards' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="px-7 pt-7 pb-4 bg-[#EEF2EC]">
           <div className="flex items-center justify-between">
             <div>
@@ -396,7 +403,6 @@ function ChangePasswordModal({ user, onClose }) {
           </div>
         </div>
 
-        {/* Body */}
         <div className="px-7 py-6 space-y-4">
           {success ? (
             <div className="flex flex-col items-center gap-3 py-4">
@@ -405,7 +411,6 @@ function ChangePasswordModal({ user, onClose }) {
             </div>
           ) : (
             <>
-              {/* Current password */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-[#5F554D]/60 uppercase tracking-wider">Current Password</label>
                 <div className="flex items-center gap-2 bg-[#FAF7F2] border border-[#EEF2EC] rounded-2xl px-4 py-2.5">
@@ -417,15 +422,10 @@ function ChangePasswordModal({ user, onClose }) {
                     className="flex-1 bg-transparent outline-none text-sm text-[#5F554D] placeholder-[#5F554D]/30"
                     autoComplete="current-password"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrent(v => !v)}
-                    className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs transition-colors flex-shrink-0"
-                  >{showCurrent ? '🙈' : '👁️'}</button>
+                  <button type="button" onClick={() => setShowCurrent(v => !v)} className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs transition-colors flex-shrink-0">{showCurrent ? '🙈' : '👁️'}</button>
                 </div>
               </div>
 
-              {/* New password */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-[#5F554D]/60 uppercase tracking-wider">New Password</label>
                 <div className="flex items-center gap-2 bg-[#FAF7F2] border border-[#EEF2EC] rounded-2xl px-4 py-2.5">
@@ -437,13 +437,8 @@ function ChangePasswordModal({ user, onClose }) {
                     className="flex-1 bg-transparent outline-none text-sm text-[#5F554D] placeholder-[#5F554D]/30"
                     autoComplete="new-password"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowNew(v => !v)}
-                    className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs transition-colors flex-shrink-0"
-                  >{showNew ? '🙈' : '👁️'}</button>
+                  <button type="button" onClick={() => setShowNew(v => !v)} className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs transition-colors flex-shrink-0">{showNew ? '🙈' : '👁️'}</button>
                 </div>
-                {/* Strength bar */}
                 {newPassword.length > 0 && (
                   <div className="flex gap-1 mt-1">
                     {[1,2,3,4].map(i => (
@@ -453,7 +448,6 @@ function ChangePasswordModal({ user, onClose }) {
                 )}
               </div>
 
-              {/* Confirm password */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-[#5F554D]/60 uppercase tracking-wider">Confirm New Password</label>
                 <div className="flex items-center gap-2 bg-[#FAF7F2] border border-[#EEF2EC] rounded-2xl px-4 py-2.5">
@@ -466,11 +460,7 @@ function ChangePasswordModal({ user, onClose }) {
                     className="flex-1 bg-transparent outline-none text-sm text-[#5F554D] placeholder-[#5F554D]/30"
                     autoComplete="new-password"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirm(v => !v)}
-                    className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs transition-colors flex-shrink-0"
-                  >{showConfirm ? '🙈' : '👁️'}</button>
+                  <button type="button" onClick={() => setShowConfirm(v => !v)} className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs transition-colors flex-shrink-0">{showConfirm ? '🙈' : '👁️'}</button>
                 </div>
                 {confirmPassword.length > 0 && newPassword !== confirmPassword && (
                   <p className="text-[10px] text-red-400 font-medium">Passwords don't match yet</p>
@@ -855,6 +845,9 @@ function JournalView({ user, sessionId }) {
     }
   `;
 
+  // "Old pages" stay sepia/dusty in BOTH themes on purpose — it's meant to
+  // read as aged paper, and that identity would be lost if it followed
+  // dark mode too. Only the live calendar/notebook chrome below re-themes.
   const dustyPaperBg = `
     radial-gradient(circle at 12% 18%, rgba(120,98,66,0.08), transparent 9%),
     radial-gradient(circle at 82% 24%, rgba(120,98,66,0.07), transparent 11%),
@@ -870,19 +863,20 @@ function JournalView({ user, sessionId }) {
   // ── Shared calendar grid JSX (used by both desktop sidebar and mobile panel) ─
   const CalendarGrid = ({ onSelectDate }) => (
     <div
-      className="bg-white rounded-2xl overflow-hidden"
-      style={{ boxShadow: '0 2px 12px rgba(95,85,77,0.08)', border: '1px solid rgba(183,201,187,0.3)' }}
+      className="rounded-2xl overflow-hidden transition-colors duration-300"
+      style={{ background: 'var(--bg-recent-item)', boxShadow: '0 2px 12px rgba(95,85,77,0.08)', border: '1px solid var(--journal-border)' }}
     >
-      <div className="flex items-center justify-between px-2.5 py-2 bg-[#EEF2EC]">
-        <button onClick={prevMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/70 text-[#5F554D]/60 hover:text-[#5F554D] transition-all text-xs font-bold">‹</button>
+      {/* Calendar top — purple in dark mode (var(--bg-sidebar)) */}
+      <div className="flex items-center justify-between px-2.5 py-2 transition-colors duration-300" style={{ background: 'var(--bg-sidebar)' }}>
+        <button onClick={prevMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:opacity-70 transition-all text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>‹</button>
         <div className="text-center leading-tight">
-          <p className="text-[10px] font-bold text-[#5F554D] tracking-wide uppercase">{MONTHS_SHORT[calMonth]}</p>
-          <p className="text-[9px] text-[#5F554D]/40 font-medium">{calYear}</p>
+          <p className="text-[10px] font-bold tracking-wide uppercase" style={{ color: 'var(--text-primary)' }}>{MONTHS_SHORT[calMonth]}</p>
+          <p className="text-[9px] font-medium" style={{ color: 'var(--text-secondary)' }}>{calYear}</p>
         </div>
-        <button onClick={nextMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/70 text-[#5F554D]/60 hover:text-[#5F554D] transition-all text-xs font-bold">›</button>
+        <button onClick={nextMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:opacity-70 transition-all text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>›</button>
       </div>
       <div className="grid grid-cols-7 px-2 pt-2 pb-0.5">
-        {CAL_DAYS.map((d, i) => <div key={i} className="text-center text-[8px] font-bold text-[#5F554D]/30 uppercase">{d}</div>)}
+        {CAL_DAYS.map((d, i) => <div key={i} className="text-center text-[8px] font-bold uppercase opacity-60" style={{ color: 'var(--text-secondary)' }}>{d}</div>)}
       </div>
       <div className="grid grid-cols-7 gap-x-1.5 gap-y-px px-2 pb-2">
         {Array.from({ length: firstWeekday }).map((_, i) => <div key={`e${i}`} />)}
@@ -898,41 +892,39 @@ function JournalView({ user, sessionId }) {
               disabled={future}
               onClick={() => { setSelected(ds); onSelectDate && onSelectDate(); }}
               title={hasE ? 'Has entry' : undefined}
-              className={`relative flex flex-col items-center justify-center h-[22px] w-full rounded-lg text-[9px] font-medium transition-all ${
-                future ? 'opacity-20 cursor-not-allowed text-[#5F554D]/30' :
-                sel    ? 'bg-[#B7C9BB] text-[#5F554D] font-bold shadow-sm' :
-                tod    ? 'bg-[#F5D6C6] text-[#5F554D] font-bold' :
-                hasE   ? 'text-[#5F554D] font-bold hover:bg-[#EEF2EC]' :
-                         'text-[#5F554D]/50 hover:bg-[#EEF2EC]'
-              }`}
+              className={`relative flex flex-col items-center justify-center h-[22px] w-full rounded-lg text-[9px] font-medium transition-all ${future ? 'opacity-20 cursor-not-allowed' : ''} ${(sel || tod || hasE) ? 'font-bold' : ''}`}
+              style={{
+                background: sel ? 'var(--journal-selected-bg)' : tod ? 'var(--bg-active-tab)' : 'transparent',
+                color: (sel || tod) ? 'var(--text-primary)' : 'var(--text-secondary)',
+              }}
             >
               {day}
-              {hasE && !sel && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-[3px] h-[3px] rounded-full bg-[#B7C9BB]" />}
+              {hasE && !sel && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-[3px] h-[3px] rounded-full" style={{ background: 'var(--journal-selected-bg)' }} />}
             </button>
           );
         })}
       </div>
-      <div className="border-t border-[#EEF2EC] px-2.5 py-2 space-y-1">
-        {[['#F5D6C6','Today'],['#B7C9BB','Selected']].map(([color, label]) => (
+      <div className="border-t px-2.5 py-2 space-y-1 transition-colors duration-300" style={{ borderColor: 'var(--journal-border)' }}>
+        {[['var(--bg-active-tab)','Today'],['var(--journal-selected-bg)','Selected']].map(([color, label]) => (
           <div key={label} className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-md flex-shrink-0 inline-block" style={{ background: color }} />
-            <span className="text-[8px] text-[#5F554D]/40 font-medium">{label}</span>
+            <span className="text-[8px] font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</span>
           </div>
         ))}
         <div className="flex items-center gap-1.5">
-          <span className="w-[5px] h-[5px] rounded-full bg-[#B7C9BB] flex-shrink-0 inline-block ml-[2px]" />
-          <span className="text-[8px] text-[#5F554D]/40 font-medium">Has entry</span>
+          <span className="w-[5px] h-[5px] rounded-full flex-shrink-0 inline-block ml-[2px]" style={{ background: 'var(--journal-selected-bg)' }} />
+          <span className="text-[8px] font-medium" style={{ color: 'var(--text-secondary)' }}>Has entry</span>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-[#FAF7F2]">
+    <div className="flex-1 flex overflow-hidden transition-colors duration-300" style={{ background: 'var(--bg-app)' }}>
       {/* ── Desktop calendar sidebar ─────────────────────────────────────────── */}
       <div
-        className="hidden md:flex flex-col flex-shrink-0 p-3 border-r border-[#EEF2EC]"
-        style={{ width: 210 }}
+        className="hidden md:flex flex-col flex-shrink-0 p-3 border-r transition-colors duration-300"
+        style={{ width: 210, borderColor: 'var(--journal-border)' }}
       >
         <CalendarGrid />
       </div>
@@ -940,31 +932,32 @@ function JournalView({ user, sessionId }) {
       {/* ── Main notebook area ───────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 p-4 overflow-hidden">
         <div
-          className="flex-1 flex flex-col overflow-hidden rounded-2xl"
+          className="flex-1 flex flex-col overflow-hidden rounded-2xl transition-colors duration-300"
           style={{
-            background: '#FEFDF7',
+            background: 'var(--bg-recent-item)',
             boxShadow: '0 6px 28px rgba(95,85,77,0.11), 0 1px 4px rgba(95,85,77,0.07)',
-            border: '1px solid rgba(183,201,187,0.25)',
+            border: '1px solid var(--journal-border)',
           }}
         >
           <SpiralRings count={13} />
 
           {/* ── Notebook header ─────────────────────────────────────────────── */}
-          <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-[#EEF2EC]/80">
+          <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b transition-colors duration-300" style={{ borderColor: 'var(--journal-border)' }}>
             <div>
-              <p className="text-[10px] font-bold text-[#5F554D]/40 uppercase tracking-widest mb-0.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 opacity-70" style={{ color: 'var(--text-secondary)' }}>
                 {isFuture ? 'Future page' : entries[selected] ? 'Editing entry' : 'New entry'}
               </p>
-              <p className="font-serif text-sm font-semibold text-[#5F554D]">{friendlyDate}</p>
+              <p className="font-serif text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{friendlyDate}</p>
             </div>
 
             <div className="flex items-center gap-2">
-              {loading && <span className="text-[10px] text-[#5F554D]/40 animate-pulse">Loading…</span>}
+              {loading && <span className="text-[10px] animate-pulse" style={{ color: 'var(--text-secondary)' }}>Loading…</span>}
 
               {/* Mobile calendar toggle — hidden on md+ where sidebar is visible */}
               <button
                 onClick={() => setShowMobileCalendar(v => !v)}
-                className="md:hidden flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#EEF2EC] hover:bg-[#D9E8DB] text-[#5F554D] text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                className="md:hidden flex items-center gap-1 px-3 py-1.5 rounded-full hover:opacity-80 text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                style={{ background: 'var(--bg-sidebar)', color: 'var(--text-primary)' }}
                 aria-label="Toggle calendar"
               >
                 <span className="text-xs">📅</span>
@@ -973,13 +966,14 @@ function JournalView({ user, sessionId }) {
 
               <button
                 onClick={openPastPanel}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#EEF2EC] hover:bg-[#D9E8DB] text-[#5F554D] text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:opacity-80 text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                style={{ background: 'var(--bg-sidebar)', color: 'var(--text-primary)' }}
               >
                 <span className="text-xs">📋</span>
                 <span className="hidden sm:inline">Past Entries</span>
                 <span className="sm:hidden">Past</span>
                 {pastEntries.length > 0 && (
-                  <span className="bg-[#5F554D] text-white rounded-full px-1.5 py-0 text-[8px] font-bold leading-4">
+                  <span className="text-white rounded-full px-1.5 py-0 text-[8px] font-bold leading-4" style={{ background: 'var(--journal-primary-btn)' }}>
                     {pastEntries.length}
                   </span>
                 )}
@@ -991,8 +985,9 @@ function JournalView({ user, sessionId }) {
                   disabled={saving}
                   title={entries[selected] ? 'Delete this saved entry' : 'Clear the draft'}
                   className={`px-3 py-1.5 font-bold text-[10px] uppercase tracking-wider rounded-full transition-all active:scale-95 disabled:opacity-40 ${
-                    clearConfirm ? 'bg-red-500 text-white' : 'bg-[#EEF2EC] text-[#5F554D]/60 hover:bg-red-50 hover:text-red-500'
+                    clearConfirm ? 'bg-red-500 text-white' : 'hover:bg-red-50 hover:text-red-500'
                   }`}
+                  style={!clearConfirm ? { background: 'var(--bg-sidebar)', color: 'var(--text-secondary)' } : undefined}
                 >
                   {clearConfirm ? 'Confirm clear?' : '🗑 Clear'}
                 </button>
@@ -1002,9 +997,11 @@ function JournalView({ user, sessionId }) {
                 <button
                   onClick={handleSave}
                   disabled={!draft.trim() || saving}
-                  className={`px-4 py-1.5 font-bold text-[10px] uppercase tracking-wider rounded-full transition-all active:scale-95 disabled:opacity-40 ${
-                    savedFlash ? 'bg-[#D9E8DB] text-[#5F554D]' : 'bg-[#5F554D] text-white shadow-sm hover:bg-[#4A4340]'
-                  }`}
+                  className="px-4 py-1.5 font-bold text-[10px] uppercase tracking-wider rounded-full transition-all active:scale-95 disabled:opacity-40 shadow-sm"
+                  style={{
+                    background: savedFlash ? 'var(--bg-active-tab)' : 'var(--journal-primary-btn)',
+                    color: savedFlash ? 'var(--text-primary)' : 'white',
+                  }}
                 >
                   {saving ? '…' : savedFlash ? '✓ Saved' : entries[selected] ? 'Update' : 'Save'}
                 </button>
@@ -1014,7 +1011,7 @@ function JournalView({ user, sessionId }) {
 
           {/* ── Mobile calendar panel (collapsible) ─────────────────────────── */}
           {showMobileCalendar && (
-            <div className="md:hidden flex-shrink-0 px-4 pt-3 pb-3 border-b border-[#EEF2EC]/80 bg-[#FEFDF7]">
+            <div className="md:hidden flex-shrink-0 px-4 pt-3 pb-3 border-b transition-colors duration-300" style={{ borderColor: 'var(--journal-border)', background: 'var(--bg-recent-item)' }}>
               <CalendarGrid onSelectDate={() => setShowMobileCalendar(false)} />
             </div>
           )}
@@ -1022,20 +1019,20 @@ function JournalView({ user, sessionId }) {
           {/* ── Lined writing area ───────────────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto relative">
             <div className="absolute top-0 bottom-0 pointer-events-none" style={{ left: 64, width: 1, background: 'rgba(255,150,150,0.28)' }} />
-            <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(transparent, transparent 31px, #E6EBE3 31px, #E6EBE3 32px)', backgroundPosition: '0 8px' }} />
+            <div className="absolute inset-0 pointer-events-none opacity-90" style={{ backgroundImage: 'repeating-linear-gradient(transparent, transparent 31px, var(--journal-border) 31px, var(--journal-border) 32px)', backgroundPosition: '0 8px' }} />
             <textarea
               ref={textRef}
               value={draft}
               onChange={e => setDraft(e.target.value)}
               disabled={isFuture}
               placeholder={isFuture ? '' : "What's stirring inside you today…"}
-              className="relative z-10 w-full h-full min-h-[300px] bg-transparent outline-none text-sm leading-8 resize-none text-[#5F554D] placeholder-[#5F554D]/22"
-              style={{ lineHeight: '32px', fontFamily: "'Georgia','Times New Roman',serif", paddingLeft: 76, paddingRight: 28, paddingTop: 8, paddingBottom: 20 }}
+              className="relative z-10 w-full h-full min-h-[300px] bg-transparent outline-none text-sm leading-8 resize-none"
+              style={{ lineHeight: '32px', fontFamily: "'Georgia','Times New Roman',serif", paddingLeft: 76, paddingRight: 28, paddingTop: 8, paddingBottom: 20, color: 'var(--text-primary)' }}
             />
           </div>
 
-          <div className="flex-shrink-0 border-t border-[#EEF2EC]/80 px-6 py-2">
-            <p className="text-[10px] text-[#5F554D]/35 font-medium">
+          <div className="flex-shrink-0 border-t px-6 py-2 transition-colors duration-300" style={{ borderColor: 'var(--journal-border)' }}>
+            <p className="text-[10px] font-medium opacity-80" style={{ color: 'var(--text-secondary)' }}>
               {isFuture ? '🌙 Future pages are still blank' : wordCount > 0 ? `${wordCount} word${wordCount !== 1 ? 's' : ''}` : 'Start writing — it gets easier…'}
             </p>
             {saveError && (
@@ -1045,7 +1042,7 @@ function JournalView({ user, sessionId }) {
         </div>
       </div>
 
-      {/* ── Past entries panel ───────────────────────────────────────────────── */}
+      {/* ── Past entries panel — intentionally stays dusty/sepia in both themes ── */}
       {showPastPanel && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6"
@@ -1136,7 +1133,7 @@ function JournalView({ user, sessionId }) {
         </div>
       )}
 
-      {/* ── View past entry modal ────────────────────────────────────────────── */}
+      {/* ── View past entry modal — also stays dusty/sepia in both themes ────── */}
       {viewingEntry && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-6"
@@ -1246,6 +1243,15 @@ export default function Dashboard({ user, onLogout }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth,setSidebarWidth]= useState(280);
 
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('dori_theme') === 'dark');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('dori_theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
+
+  const toggleDarkMode = () => setDarkMode(d => !d);
+
   const isResizing   = useRef(false);
   const startX       = useRef(0);
   const startWidth   = useRef(0);
@@ -1281,15 +1287,14 @@ export default function Dashboard({ user, onLogout }) {
   const [isTyping,        setIsTyping]        = useState(false);
   const [sessions,        setSessions]        = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
-  const [lanternMood,     setLanternMood]     = useState('Calm');
-  const [chatMood,        setChatMood]        = useState('calm');
   const messagesEndRef = useRef(null);
   const justCreatedSessionRef = useRef(false);
   const sessionsRef = useRef([]);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   const manualRenameRef = useRef(new Set());
   const sessionConvoRef = useRef({});
-  const sessionActivityRef = useRef({}); // { [sessionId]: lastTouchedMs }
+  const sessionActivityRef = useRef({});
+  const hasRestoredSessionRef = useRef(false);
 
   const [hoveredSession,  setHoveredSession]  = useState(null);
   const [openMenuSession, setOpenMenuSession] = useState(null);
@@ -1306,6 +1311,19 @@ export default function Dashboard({ user, onLogout }) {
   const [profileOpen,  setProfileOpen]  = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const profileRef = useRef(null);
+
+  // ─── Single-session enforcement ──────────────────────────────────────────
+  // instanceIdRef uses getOrCreateInstanceId which reads from sessionStorage.
+  // sessionStorage survives page reload but is NOT shared between tabs, so:
+  //   • Reload → same instanceId → localStorage entry matches → NO conflict ✓
+  //   • New tab → new instanceId → localStorage entry differs → conflict shown ✓
+  //   • New device → different browser entirely → backend heartbeat catches it ✓
+  const instanceIdRef       = useRef(user?.id ? getOrCreateInstanceId(user.id) : null);
+  const heartbeatTimerRef   = useRef(null);
+  const broadcastChannelRef = useRef(null);
+  const [sessionConflict,  setSessionConflict]  = useState(false);
+  const [sessionDisplaced, setSessionDisplaced] = useState(false);
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (e) => { if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false); };
@@ -1328,6 +1346,200 @@ export default function Dashboard({ user, onLogout }) {
     const t3 = setTimeout(() => setWelcomeComplete(true),3400);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
+
+  // ─── Cross-device + same-browser single-session enforcement ──────────────
+  //
+  // Two layers:
+  //   Layer 1 (same browser, instant): BroadcastChannel + localStorage.
+  //     Identical to the original code — lets tabs react in < 1 s.
+  //   Layer 2 (cross-device, polling): backend /active-session + /heartbeat.
+  //     On mount → check for an existing live session (excluding our own log_id).
+  //     Every 20 s → POST /heartbeat. If it returns active:false, displace.
+  //
+  // Both layers share the same sessionConflict / sessionDisplaced state and
+  // the same handleContinueHere / handleStayInOther handlers.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ─── Layer 1: same-browser tab enforcement via BroadcastChannel + localStorage ───
+  // instanceId lives in sessionStorage: survives reload, isolated per tab.
+  // KEY FIX: We do NOT remove the localStorage entry on useEffect cleanup.
+  // React StrictMode double-invokes effects (mount→cleanup→mount), so removing
+  // it in cleanup would wipe the entry and kill detection for new tabs.
+  // We only remove it on intentional logout or takeover (handleLogout / handleStayInOther).
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const STORAGE_KEY  = ACTIVE_INSTANCE_KEY(user.id);
+    const CHANNEL_NAME = `dori_session_${user.id}`;
+    const myId = getOrCreateInstanceId(user.id);
+    instanceIdRef.current = myId;
+
+    // Check if another tab on this browser already owns the session.
+    // isDifferentTab: stored id exists and is not ours (not a reload).
+    // isFresh: written recently enough that the other tab is still alive.
+    // We use 60s here (generous) since the LS refresh is every 10s.
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw);
+        const age = Date.now() - (stored.timestamp ?? 0);
+        const isDifferentTab = stored.instanceId && stored.instanceId !== myId;
+        const isFresh = age < 60_000;
+        if (isDifferentTab && isFresh) {
+          setSessionConflict(true);
+        }
+      }
+    } catch (_) {}
+
+    // Write our record immediately, then refresh every 10s.
+    // Short interval ensures the entry stays fresh even if the tab is idle.
+    const writeLS = (extra = {}) => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          instanceId: myId,
+          timestamp:  Date.now(),
+          ...extra,
+        }));
+      } catch (_) {}
+    };
+    writeLS();
+    const lsTimer = setInterval(writeLS, 10_000);
+
+    // Also refresh when the tab becomes visible (handles long-idle tabs)
+    const handleVisibility = () => { if (document.visibilityState === 'visible') writeLS(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // BroadcastChannel for instant cross-tab messaging (same browser only)
+    let channel = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel = new BroadcastChannel(CHANNEL_NAME);
+      broadcastChannelRef.current = channel;
+      channel.postMessage({ type: 'NEW_SESSION', instanceId: myId });
+      channel.onmessage = (e) => {
+        const { type, instanceId: senderId } = e.data ?? {};
+        if (!type || senderId === myId) return;
+        if (type === 'TAKE_OVER') {
+          clearInterval(lsTimer);
+          document.removeEventListener('visibilitychange', handleVisibility);
+          try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+          channel.close();
+          setSessionDisplaced(true);
+        }
+        if (type === 'YIELD') {
+          setSessionConflict(false);
+        }
+      };
+    }
+
+    // Storage event: fallback for TAKE_OVER if BroadcastChannel message was missed
+    const handleStorage = (e) => {
+      if (e.key !== STORAGE_KEY) return;
+      try {
+        if (!e.newValue) { setSessionConflict(false); return; }
+        const data = JSON.parse(e.newValue);
+        if (data && data.instanceId !== myId && data.takenOver) {
+          clearInterval(lsTimer);
+          document.removeEventListener('visibilitychange', handleVisibility);
+          broadcastChannelRef.current?.close();
+          setSessionDisplaced(true);
+        }
+      } catch (_) {}
+    };
+    window.addEventListener('storage', handleStorage);
+
+    // Cleanup: stop timers and listeners, but DO NOT remove the localStorage
+    // entry here — React StrictMode would wipe it during its mount→cleanup→mount
+    // cycle. The entry is removed only on intentional logout or takeover.
+    return () => {
+      clearInterval(lsTimer);
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      broadcastChannelRef.current?.close();
+    };
+  }, [user?.id]);
+
+  // ─── Layer 2: cross-device + incognito enforcement via backend ─────────────
+  // This is the ONLY layer that works between normal and incognito tabs,
+  // or between different browsers/devices. Layer 1 (localStorage) is blind there.
+  //
+  // We check /active-session twice: immediately on mount, then again after 3s.
+  // The 3s retry handles the race where Tab A's heartbeat just refreshed and
+  // the Supabase replica hasn't propagated yet, or where our own heartbeat
+  // hasn't completed yet and created a false stale read.
+  useEffect(() => {
+    if (!user?.id || !user?.logId) return;
+
+    const logId = Number(user.logId);
+    let cancelled = false;
+
+    const checkActiveElsewhere = async () => {
+      try {
+        const res = await fetch(
+          `${BACKEND_URL}/auth/active-session/${user.id}?exclude_log_id=${logId}`
+        );
+        if (!res.ok) {
+          console.warn('[Dori session] /active-session returned', res.status);
+          return false;
+        }
+        const data = await res.json();
+        console.log('[Dori session] active-elsewhere:', data.active_elsewhere, data.other ?? '', data.error ?? '');
+        if (data.error) {
+          console.warn('[Dori session] Backend error hint:', data.error);
+        }
+        return data.active_elsewhere === true;
+      } catch (err) {
+        console.warn('[Dori session] /active-session error:', err.message);
+        return false;
+      }
+    };
+
+    const runHeartbeat = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/auth/heartbeat/${logId}`, { method: 'POST' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.warning) console.warn('[Dori session] Heartbeat warning:', data.warning);
+        if (!data.active && !cancelled) {
+          clearInterval(heartbeatTimerRef.current);
+          setSessionDisplaced(true);
+        }
+      } catch (_) {}
+    };
+
+    // Run heartbeat first so our last_seen_at is written to DB immediately,
+    // then check for conflicts (so we don't accidentally see our own session as "other")
+    const init = async () => {
+      await runHeartbeat();
+      if (cancelled) return;
+
+      // First check
+      const foundConflict = await checkActiveElsewhere();
+      if (cancelled) return;
+
+      if (foundConflict) {
+        setSessionConflict(true);
+        return;
+      }
+
+      // Retry after 3s — catches cases where the other tab's last_seen_at
+      // was written but the DB query ran fractionally before it propagated
+      await new Promise(r => setTimeout(r, 3000));
+      if (cancelled) return;
+
+      const foundConflict2 = await checkActiveElsewhere();
+      if (!cancelled && foundConflict2) {
+        setSessionConflict(true);
+      }
+    };
+
+    init();
+    heartbeatTimerRef.current = setInterval(runHeartbeat, HEARTBEAT_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(heartbeatTimerRef.current);
+    };
+  }, [user?.id, user?.logId]);
 
   useEffect(() => {
     if (view !== 'breathing' || !breathActive) return;
@@ -1360,43 +1572,36 @@ export default function Dashboard({ user, onLogout }) {
         const res = await fetch(`${BACKEND_URL}/sessions/user/${user.id}`);
         const data = await res.json();
         if (res.ok && data.sessions) {
-          // Load persisted "last touched" times so a chat you were just
-          // talking in stays at the top of Recent Journeys even after a
-          // reload — id-only sorting would otherwise undo that every time.
           const activity = loadSessionActivity(user.id);
           sessionActivityRef.current = activity;
 
           const sorted = [...data.sessions].sort((a, b) => {
-            // Real activity timestamps (ms since epoch, ~10^12+) are always
-            // larger than plain ids, so any touched chat naturally outranks
-            // an untouched one; among untouched chats this falls back to
-            // newest-id-first, same as before.
             const aScore = activity[a.id] ?? a.id;
             const bScore = activity[b.id] ?? b.id;
             return bScore - aScore;
           });
           setSessions(sorted);
 
-          // Restore the chat you were on if this is a page reload within the
-          // same browser tab — but NOT on a fresh login/signup, since
-          // handleLogout clears this key, so a brand-new session always
-          // starts on "New Chat" instead of jumping to the latest one.
           const storedId = sessionStorage.getItem(SESSION_STORAGE_KEY(user.id));
           const stillExists = storedId && sorted.some(s => String(s.id) === String(storedId));
           if (stillExists) {
             setActiveSessionId(Number(storedId));
+          } else if (storedId) {
+            sessionStorage.removeItem(SESSION_STORAGE_KEY(user.id));
           }
         }
       } catch (err) {
         console.error("Failed to load sessions:", err);
+      } finally {
+        hasRestoredSessionRef.current = true;
       }
     };
     if (user?.id) loadSessions();
   }, [user?.id]);
 
-  // Keep the current chat restorable across a page reload (same tab only).
   useEffect(() => {
     if (!user?.id) return;
+    if (!hasRestoredSessionRef.current) return;
     if (activeSessionId) {
       sessionStorage.setItem(SESSION_STORAGE_KEY(user.id), String(activeSessionId));
     } else {
@@ -1414,14 +1619,12 @@ export default function Dashboard({ user, onLogout }) {
         if (res.ok && data.messages) {
           const formatted = data.messages
             .filter(m => m.content)
-            .map(m => ({ id: m.id, text: m.content, isBot: m.sender === 'bot', reaction: null, emotion: resolveEmotion(m) }));
+            .map(m => ({ id: m.id, text: m.content, isBot: m.sender === 'bot', reaction: null }));
           setMessages(formatted);
           sessionConvoRef.current[activeSessionId] = formatted.map(m => ({
             sender: m.isBot ? 'bot' : 'user',
             content: m.text,
           }));
-          const lastFeeling = [...formatted].reverse().find(m => m.emotion && CHAT_MOOD_BG[m.emotion]);
-          setChatMood(lastFeeling ? lastFeeling.emotion : 'calm');
 
           const sess = sessions.find(s => s.id === activeSessionId);
           const msgCount = data.messages.length;
@@ -1441,11 +1644,8 @@ export default function Dashboard({ user, onLogout }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId]);
 
-  const handleStartNewChat = () => { setActiveSessionId(null); setMessages([]); setChatMood('calm'); };
+  const handleStartNewChat = () => { setActiveSessionId(null); setMessages([]); };
 
-  // Records that a chat was just used: moves it to the top of Recent
-  // Journeys in memory AND persists the timestamp to localStorage, so the
-  // order survives a page reload instead of reverting to id-order.
   const touchSessionActivity = useCallback((id) => {
     const now = Date.now();
     sessionActivityRef.current = { ...sessionActivityRef.current, [id]: now };
@@ -1453,7 +1653,7 @@ export default function Dashboard({ user, onLogout }) {
 
     setSessions(prev => {
       const idx = prev.findIndex(s => s.id === id);
-      if (idx <= 0) return prev; // already at top, or not found
+      if (idx <= 0) return prev;
       const updated = [...prev];
       const [item] = updated.splice(idx, 1);
       updated.unshift(item);
@@ -1483,8 +1683,6 @@ export default function Dashboard({ user, onLogout }) {
         } else { console.error("Could not create chat session"); return; }
       } catch (err) { console.error("Session creation failed:", err); return; }
     } else {
-      // Existing chat — bring it to the top of Recent Journeys right away,
-      // and remember that timestamp so it's still on top after a reload.
       touchSessionActivity(currentSessionId);
     }
 
@@ -1503,8 +1701,6 @@ export default function Dashboard({ user, onLogout }) {
       const data = await response.json();
       if (response.ok && data.reply?.response) {
         setMessages(prev => [...prev, { id: Date.now() + 1, text: data.reply.response, isBot: true, reaction: null }]);
-        const feeling = resolveEmotion(data.reply) || resolveEmotion(data);
-        if (feeling && CHAT_MOOD_BG[feeling]) setChatMood(feeling);
 
         sessionConvoRef.current[currentSessionId].push({ sender: 'bot', content: data.reply.response });
         const convo = sessionConvoRef.current[currentSessionId];
@@ -1534,8 +1730,6 @@ export default function Dashboard({ user, onLogout }) {
 
   const handleReaction = (msgId, emoji) => {
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reaction: m.reaction === emoji ? null : emoji } : m));
-    const opt = REACTION_OPTIONS.find(o => o.emoji === emoji);
-    if (opt) setLanternMood(opt.mood);
   };
 
   const handleDeleteSession = async (sessId) => {
@@ -1584,9 +1778,81 @@ export default function Dashboard({ user, onLogout }) {
     if (user?.logId) {
       try { await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: "POST" }); } catch (_) {}
     }
-    if (user?.id) sessionStorage.removeItem(SESSION_STORAGE_KEY(user.id));
+    if (user?.id) {
+      // Clear chat session tracker
+      sessionStorage.removeItem(SESSION_STORAGE_KEY(user.id));
+      // Clear the instanceId so the next login on this tab starts fresh
+      sessionStorage.removeItem(INSTANCE_ID_SESSION_KEY(user.id));
+    }
+
+    // Remove our localStorage active-instance entry
+    try {
+      const STORAGE_KEY = ACTIVE_INSTANCE_KEY(user.id);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw);
+        if (stored.instanceId === instanceIdRef.current) localStorage.removeItem(STORAGE_KEY);
+      }
+    } catch (_) {}
+
+    clearInterval(heartbeatTimerRef.current);
+    broadcastChannelRef.current?.close();
     onLogout();
   };
+
+  // ─── Session conflict / takeover handlers ────────────────────────────────
+
+  // User clicks "Yes, use Dori here" — take over all other sessions
+  const handleContinueHere = useCallback(async () => {
+    // Layer 1: broadcast to same-browser tabs
+    const STORAGE_KEY = ACTIVE_INSTANCE_KEY(user.id);
+    const myId        = instanceIdRef.current;
+    broadcastChannelRef.current?.postMessage({ type: 'TAKE_OVER', instanceId: myId });
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        instanceId: myId,
+        timestamp:  Date.now(),
+        takenOver:  true,
+      }));
+    } catch (_) {}
+
+    // Layer 2: tell backend to end all other sessions for this user
+    if (user?.logId) {
+      try {
+        await fetch(`${BACKEND_URL}/auth/takeover/${user.logId}`, { method: 'POST' });
+      } catch (_) {}
+    }
+
+    setSessionConflict(false);
+  }, [user.id, user?.logId]);
+
+  // User clicks "Keep using the other window" — log out of this tab
+  const handleStayInOther = useCallback(async () => {
+    const STORAGE_KEY = ACTIVE_INSTANCE_KEY(user.id);
+    const myId        = instanceIdRef.current;
+    broadcastChannelRef.current?.postMessage({ type: 'YIELD', instanceId: myId });
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw);
+        if (stored.instanceId === myId) localStorage.removeItem(STORAGE_KEY);
+      }
+    } catch (_) {}
+
+    clearInterval(heartbeatTimerRef.current);
+    broadcastChannelRef.current?.close();
+
+    // Also end our backend session so it doesn't ghost as "active elsewhere"
+    if (user?.logId) {
+      try {
+        await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: 'POST' });
+      } catch (_) {}
+    }
+
+    onLogout();
+  }, [user.id, user?.logId, onLogout]);
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const phaseColors = {
     Inhale: { bg: '#EEF2EC', text: '#5F554D', label: 'Breathe in slowly...' },
@@ -1597,7 +1863,11 @@ export default function Dashboard({ user, onLogout }) {
   const NavItem = ({ id, icon, label }) => (
     <button
       onClick={() => { setView(id); if (window.innerWidth < 768) setSidebarOpen(false); }}
-      className={`w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 ${view === id ? "bg-[#F5D6C6] text-[#5F554D] shadow-sm" : "text-[#5F554D]/70 hover:bg-white/70 active:scale-[0.98]"}`}
+      className={`w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 ${view === id ? "shadow-sm" : "hover:bg-[var(--bg-recent-item)] active:scale-[0.98]"}`}
+      style={{
+        background: view === id ? 'var(--bg-active-tab)' : 'transparent',
+        color: view === id ? 'var(--text-primary)' : 'var(--text-secondary)',
+      }}
     >
       <span>{icon}</span>
       {sidebarOpen && <span>{label}</span>}
@@ -1605,20 +1875,19 @@ export default function Dashboard({ user, onLogout }) {
   );
 
   return (
-    <div className="flex h-screen w-full bg-[#FAF7F2] overflow-hidden text-[#5F554D] font-sans">
+    <div className="flex h-screen w-full overflow-hidden font-sans" style={{ background: 'var(--bg-app)', color: 'var(--text-primary)' }}>
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-[#5F554D]/20 z-20 md:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/20 z-20 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* ── SIDEBAR ── */}
       <div
-        className={`fixed md:relative top-0 left-0 h-full z-30 md:z-10 bg-[#EEF2EC] flex flex-col justify-between transition-all duration-300 ease-in-out overflow-hidden ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
-        style={{ width: sidebarOpen ? (window.innerWidth < 768 ? 288 : sidebarWidth) : (window.innerWidth >= 768 ? 0 : 0), padding: sidebarOpen ? undefined : 0 }}
+        className={`fixed md:relative top-0 left-0 h-full z-30 md:z-10 flex flex-col justify-between transition-all duration-300 ease-in-out overflow-hidden ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+        style={{ width: sidebarOpen ? (window.innerWidth < 768 ? 288 : sidebarWidth) : (window.innerWidth >= 768 ? 0 : 0), padding: sidebarOpen ? undefined : 0, background: 'var(--bg-sidebar)' }}
       >
         {sidebarOpen && (
           <div className="flex flex-col h-full overflow-hidden">
 
-            {/* ── Fixed top: logo + nav ── */}
             <div className="flex-shrink-0 px-5 pt-5 space-y-5">
               <div className="flex flex-col items-center gap-1.5 px-1 pt-3 pb-2">
                 <div
@@ -1647,11 +1916,8 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             </div>
 
-            {/* ── Recent Journeys: sticky header + conditionally scrollable list ── */}
-            {/* The header and the "Leave Space" footer never scroll away — only   */}
-            {/* the chat list itself scrolls, and only once there are a few chats. */}
             <div className="flex-1 flex flex-col px-5 pt-3 pb-2 min-h-0 overflow-hidden">
-              <h4 className="flex-shrink-0 text-xs font-semibold uppercase tracking-wider text-[#5F554D]/40 mb-2.5 px-1">
+              <h4 className="flex-shrink-0 text-xs font-semibold uppercase tracking-wider mb-2.5 px-1" style={{ color: 'var(--text-secondary)' }}>
                 Recent Journeys
               </h4>
 
@@ -1661,7 +1927,7 @@ export default function Dashboard({ user, onLogout }) {
                 className={`recent-journeys-scroll space-y-1.5 ${sessions.length > 2 ? 'flex-1 overflow-y-auto min-h-0 pr-1.5' : 'flex-shrink-0'}`}
               >
                 {sessions.length === 0 ? (
-                  <p className="text-xs text-[#5F554D]/50 px-1">No past sessions yet</p>
+                  <p className="text-xs px-1" style={{ color: 'var(--text-secondary)' }}>No past sessions yet</p>
                 ) : sessions.map(sess => (
                   <div
                     key={sess.id}
@@ -1670,7 +1936,7 @@ export default function Dashboard({ user, onLogout }) {
                     onMouseLeave={() => { if (openMenuSession !== sess.id) setHoveredSession(null); }}
                   >
                     {renamingSession === sess.id ? (
-                      <div className="flex items-center gap-1.5 bg-white rounded-xl px-3 py-2.5 shadow-sm ring-1 ring-[#B7C9BB]">
+                      <div className="flex items-center gap-1.5 rounded-xl px-3 py-2.5 shadow-sm ring-1" style={{ background: 'var(--bg-recent-item)', '--tw-ring-color': 'var(--input-glow)' }}>
                         <input
                           ref={renameInputRef}
                           value={renameValue}
@@ -1679,16 +1945,22 @@ export default function Dashboard({ user, onLogout }) {
                             if (e.key === 'Enter')  handleConfirmRename(sess.id);
                             if (e.key === 'Escape') setRenamingSession(null);
                           }}
-                          className="flex-1 bg-transparent outline-none text-xs text-[#5F554D] font-medium min-w-0"
+                          className="flex-1 bg-transparent outline-none text-xs font-medium min-w-0"
+                          style={{ color: 'var(--text-primary)' }}
                           placeholder="Chat name..."
                         />
-                        <button onClick={() => handleConfirmRename(sess.id)} className="text-[#5F554D]/60 hover:text-[#5F554D] text-xs font-bold px-0.5 flex-shrink-0">✓</button>
-                        <button onClick={() => setRenamingSession(null)}      className="text-[#5F554D]/40 hover:text-[#5F554D] text-xs px-0.5 flex-shrink-0">✕</button>
+                        <button onClick={() => handleConfirmRename(sess.id)} className="text-xs font-bold px-0.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>✓</button>
+                        <button onClick={() => setRenamingSession(null)}      className="text-xs px-0.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>✕</button>
                       </div>
                     ) : (
                       <button
                         onClick={() => { setView('chat'); setActiveSessionId(sess.id); if (window.innerWidth < 768) setSidebarOpen(false); }}
-                        className={`w-full p-3 bg-white rounded-xl text-xs font-medium cursor-pointer hover:bg-white/90 transition-all flex items-center gap-2 text-[#5F554D] text-left pr-9 ${activeSessionId === sess.id ? 'shadow-sm ring-1 ring-[#B7C9BB]' : ''}`}
+                        className={`w-full p-3 rounded-xl text-xs font-medium cursor-pointer transition-all flex items-center gap-2 text-left pr-9 ${activeSessionId === sess.id ? 'shadow-sm ring-1' : ''}`}
+                        style={{
+                          background: 'var(--bg-recent-item)',
+                          color: 'var(--text-primary)',
+                          ...(activeSessionId === sess.id ? { '--tw-ring-color': 'var(--input-glow)' } : {}),
+                        }}
                       >
                         <span className="flex-shrink-0 text-base">💬</span>
                         <span className="truncate flex-1 min-w-0 leading-snug">{sess.title || `Session ${sess.id}`}</span>
@@ -1707,7 +1979,8 @@ export default function Dashboard({ user, onLogout }) {
                             setOpenMenuSession(sess.id);
                           }
                         }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-lg bg-[#EEF2EC] hover:bg-[#D9E8DB] text-[#5F554D]/50 hover:text-[#5F554D] transition-all z-10"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-lg transition-all z-10"
+                        style={{ background: 'var(--bg-active-tab)', color: 'var(--text-secondary)' }}
                         title="More options"
                       >
                         <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
@@ -1731,27 +2004,16 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             </div>
 
-            {/* ── Pinned bottom: Leave Space ── */}
             <div className="flex-shrink-0 px-5 pb-5 pt-2">
               <button
                 onClick={handleLogout}
-                className="w-full py-4 bg-white hover:bg-[#F5D6C6]/30 active:scale-[0.98] text-left text-[#5F554D] font-medium text-sm rounded-2xl shadow-sm transition-all px-4"
+                className="w-full py-4 active:scale-[0.98] text-left font-medium text-sm rounded-2xl shadow-sm transition-all px-4"
+                style={{ background: 'var(--bg-recent-item)', color: 'var(--text-primary)' }}
               >
                 <span className="block">🚪 Leave Space</span>
-                <span className="block text-xs text-[#5F554D]/50 mt-0.5">Take a break, breathe, reset.</span>
+                <span className="block text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>Take a break, breathe, reset.</span>
               </button>
             </div>
-
-            <style>{`
-              .recent-journeys-scroll::-webkit-scrollbar { width: 5px; }
-              .recent-journeys-scroll::-webkit-scrollbar-track { background: transparent; }
-              .recent-journeys-scroll::-webkit-scrollbar-thumb {
-                background: rgba(183,201,187,0.7);
-                border-radius: 999px;
-              }
-              .recent-journeys-scroll::-webkit-scrollbar-thumb:hover { background: rgba(183,201,187,1); }
-              .recent-journeys-scroll { scrollbar-width: thin; scrollbar-color: rgba(183,201,187,0.7) transparent; }
-            `}</style>
 
           </div>
         )}
@@ -1768,23 +2030,24 @@ export default function Dashboard({ user, onLogout }) {
       <div className="flex-1 flex flex-col min-w-0 relative">
 
         {/* Top bar */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#FAF7F2] border-b border-[#EEF2EC]">
+        <div className="flex items-center justify-between px-4 py-3" style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--bg-sidebar)' }}>
           <button
             onClick={() => setSidebarOpen(o => !o)}
-            className="p-2 rounded-xl bg-white shadow-sm active:scale-95 transition-transform flex-shrink-0"
+            className="p-2 rounded-xl shadow-sm active:scale-95 transition-transform flex-shrink-0"
+            style={{ background: 'var(--bg-recent-item)' }}
             aria-label={sidebarOpen ? 'Collapse sidebar' : 'Open sidebar'}
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <rect x="1" y="3"  width="16" height="2" rx="1" fill="#5F554D"/>
-              <rect x="1" y="8"  width="12" height="2" rx="1" fill="#5F554D"/>
-              <rect x="1" y="13" width="16" height="2" rx="1" fill="#5F554D"/>
+              <rect x="1" y="3"  width="16" height="2" rx="1" fill="var(--text-primary)"/>
+              <rect x="1" y="8"  width="12" height="2" rx="1" fill="var(--text-primary)"/>
+              <rect x="1" y="13" width="16" height="2" rx="1" fill="var(--text-primary)"/>
             </svg>
           </button>
-          <span className="font-serif text-base text-[#5F554D]">
+          <span className="font-serif text-base" style={{ color: 'var(--text-primary)' }}>
             {view === "chat" ? "Companion Chat" : view === "breathing" ? "Breathing Exercise" : "Mood Journal"}
           </span>
           <div className="flex items-center gap-3">
-            <Lantern mood={lanternMood} size={30} />
+            <Lantern darkMode={darkMode} onClick={toggleDarkMode} size={30} />
             <div className="relative" ref={profileRef}>
               <button
                 onClick={() => setProfileOpen(o => !o)}
@@ -1794,26 +2057,52 @@ export default function Dashboard({ user, onLogout }) {
                 {getInitials(user?.name)}
               </button>
               {profileOpen && (
-                <div className="absolute right-0 top-12 w-52 bg-white rounded-2xl shadow-md z-50 overflow-hidden">
-                  <div className="px-4 py-3 bg-[#EEF2EC]">
-                    <p className="font-serif font-semibold text-sm text-[#5F554D] truncate">{user?.name || 'Explorer'}</p>
-                    <p className="text-[10px] text-[#5F554D]/50 font-medium mt-0.5">Mind Space Active ✦</p>
+                <div className="absolute right-0 top-12 w-56 rounded-2xl shadow-md z-50 overflow-hidden" style={{ background: 'var(--bg-recent-item)' }}>
+                  <div className="px-4 py-3" style={{ background: 'var(--bg-sidebar)' }}>
+                    <p className="font-serif font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{user?.name || 'Explorer'}</p>
+                    <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--text-secondary)' }}>Mind Space Active ✦</p>
                   </div>
                   <div className="py-1.5">
                     <button
                       onClick={() => { setProfileOpen(false); setChangePasswordOpen(true); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-[#5F554D] hover:bg-[#FAF7F2] transition-colors text-left"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
+                      style={{ color: 'var(--text-primary)' }}
                     >
                       <span className="text-base">🔑</span> Change Password
                     </button>
                     <button
                       onClick={() => { setProfileOpen(false); setView('journal'); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-[#5F554D] hover:bg-[#FAF7F2] transition-colors text-left"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
+                      style={{ color: 'var(--text-primary)' }}
                     >
                       <span className="text-base">📓</span> Mood Journal
                     </button>
                   </div>
-                  <div className="border-t border-[#EEF2EC] py-1.5">
+
+                  <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--bg-sidebar)' }}>
+                    <button
+                      onClick={() => toggleDarkMode()}
+                      className="w-full flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-3 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                        <span className="text-base">{darkMode ? '🌙' : '☀️'}</span> Dark Mode
+                      </span>
+                      <span
+                        className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+                        style={{ background: darkMode ? 'var(--lantern-glow)' : 'var(--bg-sidebar)' }}
+                      >
+                        <span
+                          className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+                          style={{ transform: darkMode ? 'translateX(18px)' : 'translateX(2px)' }}
+                        />
+                      </span>
+                    </button>
+                    <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-secondary)' }}>
+                      You can also just click the lantern! 🏮
+                    </p>
+                  </div>
+
+                  <div className="border-t py-1.5" style={{ borderColor: 'var(--bg-sidebar)' }}>
                     <button onClick={() => { setProfileOpen(false); handleLogout(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-[#a04040] hover:bg-[#fff0ee] transition-colors text-left"><span className="text-base">🚪</span> Leave Space</button>
                   </div>
                 </div>
@@ -1826,15 +2115,15 @@ export default function Dashboard({ user, onLogout }) {
         {view === "chat" && (
           <div
             className="flex-1 flex flex-col h-full overflow-hidden relative transition-colors duration-[1500ms]"
-            style={{ background: `linear-gradient(to bottom, ${CHAT_MOOD_BG[chatMood]?.from || '#FAF7F2'}, ${CHAT_MOOD_BG[chatMood]?.to || '#FAF7F2'})` }}
+            style={{ background: 'linear-gradient(to bottom, var(--bg-chat-top), var(--bg-chat-mid) 55%, var(--bg-chat-bottom))' }}
           >
             <ColorWash />
-            <FloatingDecor />
+            <FloatingDecor darkMode={darkMode} />
             {!welcomeComplete && (
-              <div className="absolute inset-0 bg-[#FAF7F2] z-50 flex flex-col items-center justify-center gap-6 p-6">
-                <h2 className="text-xl font-serif font-semibold text-[#5F554D] tracking-tight">Opening your space...</h2>
-                <div className="relative overflow-hidden rounded-t-full shadow-sm" style={{ width:160, height:200, background:'#EEF2EC', perspective:'600px' }}>
-                  <div className="absolute inset-0 flex items-end justify-center bg-[#EEF2EC] pb-3">
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6" style={{ background: 'var(--bg-app)' }}>
+                <h2 className="text-xl font-serif font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>Opening your space...</h2>
+                <div className="relative overflow-hidden rounded-t-full shadow-sm" style={{ width:160, height:200, background:'var(--bg-sidebar)', perspective:'600px' }}>
+                  <div className="absolute inset-0 flex items-end justify-center pb-3" style={{ background: 'var(--bg-sidebar)' }}>
                     <div style={{ position:'relative', display:'flex', flexDirection:'column', alignItems:'center' }}>
                       <div style={{ width:48, height:10, borderRadius:'50%', background:'#5F554D', opacity:0.15, position:'absolute', bottom:-4, left:'50%', transform:'translateX(-50%)', animation: rabbitWaving ? 'shadowPulse 0.7s ease-in-out infinite' : 'none' }} />
                       <div style={{ animation: rabbitWaving ? 'rabbitJump 0.7s ease-in-out infinite' : 'none', transformOrigin:'bottom center' }}>
@@ -1871,22 +2160,37 @@ export default function Dashboard({ user, onLogout }) {
               {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-4">
                   <RabbitSVG phase="Exhale" size={88} />
-                  <h2 className="text-2xl md:text-3xl font-serif font-semibold text-[#5F554D]">{getGreeting(user?.name, sessions.length > 0)}</h2>
-                  <p className="text-sm text-[#5F554D]/60 font-medium max-w-xs">How is your mind feeling today? Dori's here whenever you're ready.</p>
+                  <h2 className="text-2xl md:text-3xl font-serif font-semibold" style={{ color: 'var(--text-primary)' }}>{getGreeting(user?.name, sessions.length > 0)}</h2>
+                  <p className="text-sm font-medium max-w-xs" style={{ color: 'var(--text-secondary)' }}>How is your mind feeling today? Dori's here whenever you're ready.</p>
                 </div>
               ) : (
                 messages.map((msg) => (
                   <div key={msg.id} className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'} items-end gap-2`}>
                     {msg.isBot && <BuddyAvatar size={38} />}
                     <div className={`flex flex-col gap-2 max-w-[78%] md:max-w-[65%] ${msg.isBot ? 'items-start' : 'items-end'}`}>
-                      <div className={`p-4 rounded-3xl text-sm font-normal leading-relaxed shadow-sm ${msg.isBot ? "bg-white text-[#5F554D] rounded-bl-md" : "bg-[#F5D6C6] text-[#5F554D] rounded-br-md"}`}>
+                      <div
+                        className="p-4 rounded-3xl text-sm font-normal leading-relaxed shadow-sm"
+                        style={{
+                          background: msg.isBot ? 'var(--bg-prompt-chip)' : 'var(--bg-active-tab)',
+                          color: 'var(--text-primary)',
+                          borderBottomLeftRadius: msg.isBot ? '0.5rem' : undefined,
+                          borderBottomRightRadius: !msg.isBot ? '0.5rem' : undefined,
+                        }}
+                      >
                         {msg.text}
                       </div>
                       {msg.isBot && (
                         <div className="flex flex-wrap gap-1.5 pl-1">
                           {REACTION_OPTIONS.map(({ emoji, label }) => (
-                            <button key={emoji} onClick={() => handleReaction(msg.id, emoji)}
-                              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all active:scale-95 ${msg.reaction === emoji ? 'bg-[#B7C9BB] text-[#5F554D]' : 'bg-white text-[#5F554D]/60 hover:bg-[#EEF2EC] border border-[#EEF2EC]'}`}
+                            <button
+                              key={emoji}
+                              onClick={() => handleReaction(msg.id, emoji)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all active:scale-95 border"
+                              style={
+                                msg.reaction === emoji
+                                  ? { background: 'var(--bg-active-tab)', color: 'var(--text-primary)', borderColor: 'transparent' }
+                                  : { background: 'var(--bg-prompt-chip)', color: 'var(--text-secondary)', borderColor: 'var(--bg-sidebar)' }
+                              }
                             ><span>{emoji}</span> {label}</button>
                           ))}
                         </div>
@@ -1898,8 +2202,8 @@ export default function Dashboard({ user, onLogout }) {
               {isTyping && (
                 <div className="flex justify-start items-end gap-2">
                   <BuddyAvatar size={38} />
-                  <div className="bg-white rounded-3xl rounded-bl-md px-4 py-3 shadow-sm flex gap-1.5 items-center">
-                    {[0,1,2].map(i => (<div key={i} className="w-2 h-2 rounded-full bg-[#B7C9BB] animate-bounce" style={{ animationDelay:`${i*0.15}s` }} />))}
+                  <div className="rounded-3xl rounded-bl-md px-4 py-3 shadow-sm flex gap-1.5 items-center" style={{ background: 'var(--bg-prompt-chip)' }}>
+                    {[0,1,2].map(i => (<div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--bg-active-tab)', animationDelay:`${i*0.15}s` }} />))}
                   </div>
                 </div>
               )}
@@ -1909,24 +2213,29 @@ export default function Dashboard({ user, onLogout }) {
             {messages.length === 0 && (
               <div className="px-4 md:px-6 pb-2 flex gap-2 overflow-x-auto scrollbar-hide relative z-10">
                 {["I'm feeling anxious today","I need to vent","Help me calm down","I'm having a hard week"].map(prompt => (
-                  <button key={prompt} onClick={() => setInput(prompt)} className="flex-shrink-0 px-3.5 py-2 bg-white hover:bg-[#EEF2EC] rounded-full text-xs font-medium text-[#5F554D] transition-all active:scale-95 shadow-sm">{prompt}</button>
+                  <button
+                    key={prompt}
+                    onClick={() => setInput(prompt)}
+                    className="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-medium transition-all active:scale-95 shadow-sm"
+                    style={{ background: 'var(--bg-prompt-chip)', color: 'var(--text-primary)' }}
+                  >{prompt}</button>
                 ))}
               </div>
             )}
 
-            <form onSubmit={handleSendMessage} className="p-3 md:p-4 bg-[#FAF7F2] flex gap-2.5 items-end relative z-10">
-              <div className="flex-1 flex items-end gap-2 bg-white border border-[#F5D6C6] rounded-3xl px-4 py-2.5 shadow-sm">
+            <form onSubmit={handleSendMessage} className="p-3 md:p-4 flex gap-2.5 items-end relative z-10" style={{ background: 'var(--bg-app)' }}>
+              <div className="dori-chat-input flex-1 flex items-end gap-2 rounded-3xl px-4 py-2.5 shadow-sm border transition-all" style={{ background: 'var(--bg-prompt-chip)', borderColor: 'var(--bg-active-tab)' }}>
                 <textarea
                   value={input}
                   onChange={(e) => { setInput(e.target.value); e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'; }}
                   onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
                   placeholder="Tell Dori what's on your mind..."
                   rows={1}
-                  className="flex-1 bg-transparent outline-none font-normal text-sm transition-colors resize-none leading-relaxed text-[#5F554D] placeholder-[#5F554D]/40"
-                  style={{ minHeight:'24px', maxHeight:'120px' }}
+                  className="flex-1 bg-transparent outline-none font-normal text-sm transition-colors resize-none leading-relaxed"
+                  style={{ minHeight:'24px', maxHeight:'120px', color: 'var(--text-primary)' }}
                 />
               </div>
-              <button type="submit" disabled={!input.trim() || isTyping} className="w-11 h-11 flex items-center justify-center bg-[#F5D6C6] disabled:opacity-40 text-[#5F554D] font-semibold rounded-full shadow-sm active:scale-95 transition-all flex-shrink-0" aria-label="Send">➤</button>
+              <button type="submit" disabled={!input.trim() || isTyping} className="w-11 h-11 flex items-center justify-center disabled:opacity-40 font-semibold rounded-full shadow-sm active:scale-95 transition-all flex-shrink-0" style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)' }} aria-label="Send">➤</button>
             </form>
           </div>
         )}
@@ -1980,6 +2289,80 @@ export default function Dashboard({ user, onLogout }) {
       {/* ── CHANGE PASSWORD MODAL ── */}
       {changePasswordOpen && (
         <ChangePasswordModal user={user} onClose={() => setChangePasswordOpen(false)} />
+      )}
+
+      {/* ── Session conflict dialog ──────────────────────────────────────────
+          Shown when another tab (same browser) or another device has an active
+          session. The user chooses whether to take over or yield.               */}
+      {sessionConflict && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-6"
+          style={{ background: 'rgba(95,85,77,0.45)', backdropFilter: 'blur(12px)' }}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
+            style={{
+              border: '1px solid rgba(183,201,187,0.35)',
+              animation: 'pwOpen 0.32s cubic-bezier(0.34,1.45,0.64,1) forwards',
+            }}
+          >
+            <div className="px-7 pt-8 pb-3 text-center">
+              <div className="text-5xl mb-4">🏮</div>
+              <h3 className="font-serif text-lg font-semibold text-[#5F554D] mb-2">
+                Already Open Elsewhere
+              </h3>
+              <p className="text-sm text-[#5F554D]/65 leading-relaxed">
+                Dori is already open in another window or device. Would you like to
+                continue here and close that one?
+              </p>
+            </div>
+            <div className="px-7 pb-8 pt-4 space-y-2.5">
+              <button
+                onClick={handleContinueHere}
+                className="w-full py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all active:scale-[0.98] shadow-sm"
+                style={{ background: '#5F554D', color: 'white' }}
+              >
+                Yes, use Dori here
+              </button>
+              <button
+                onClick={handleStayInOther}
+                className="w-full py-3.5 rounded-2xl font-medium text-sm transition-all active:scale-[0.98]"
+                style={{ background: '#EEF2EC', color: '#5F554D' }}
+              >
+                Keep using the other window
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Session displaced overlay ────────────────────────────────────────
+          Shown when another tab/device took over and ended this session.        */}
+      {sessionDisplaced && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center p-6"
+          style={{ background: 'var(--bg-app)' }}
+        >
+          <div className="text-center max-w-xs">
+            <div className="flex justify-center mb-5 opacity-60">
+              <RabbitSVG phase="Exhale" size={80} />
+            </div>
+            <h3 className="font-serif text-2xl font-semibold text-[#5F554D] mb-3">
+              Session Ended
+            </h3>
+            <p className="text-sm text-[#5F554D]/65 leading-relaxed mb-8">
+              Dori was opened on another device, so this session has ended
+              peacefully. You can log back in whenever you're ready.
+            </p>
+            <button
+              onClick={onLogout}
+              className="px-8 py-3.5 rounded-2xl font-bold text-sm tracking-wide shadow-sm transition-all active:scale-[0.98]"
+              style={{ background: '#5F554D', color: 'white' }}
+            >
+              Log in again
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
