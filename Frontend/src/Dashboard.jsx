@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import './dashboard-theme.css';
+import './Dashboard-theme.css';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
