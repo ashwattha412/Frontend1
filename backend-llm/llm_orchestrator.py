@@ -1,7 +1,7 @@
 from huggingface_hub import InferenceClient
 from config import HF_TOKEN
 
-chat_client = InferenceClient(model="meta-llama/Meta-Llama-3-8B-Instruct", token=HF_TOKEN)
+chat_client = InferenceClient(model="meta-llama/Llama-3.3-70B-Instruct", token=HF_TOKEN)
 
 # Emotional strategy map — covers all 28 GoEmotions categories
 EMOTION_STRATEGIES = {
@@ -56,6 +56,59 @@ def get_strategy(e_label: str, s_label: str):
     
     return tier, strategy
 
+# ─── Persona & Identity ─────────────────────────────────────────────────────
+
+AURA_PERSONA = (
+    "You are AURA — a warm, emotionally intelligent peer companion designed to be "
+    "a safe space for anyone who needs to talk. You speak like a trusted friend, "
+    "never a therapist or doctor. You use casual, natural language. You ask "
+    "thoughtful follow-up questions. You remember what the user shared earlier in "
+    "the conversation and reference it naturally. You never lecture. You "
+    "occasionally use gentle humor when appropriate. You are never dismissive.\n\n"
+    "Your personality: empathetic, curious, gently playful, non-judgmental, "
+    "deeply attentive to what's unsaid as much as what's said."
+)
+
+# ─── Few-Shot Examples ──────────────────────────────────────────────────────
+
+FEW_SHOT_EXAMPLES = (
+    "Here are examples of how you should respond:\n\n"
+    'User: "I just got laid off today."\n'
+    'AURA: "Oh no, that\'s a lot to take in all at once. How are you holding up right now?"\n\n'
+    'User: "I aced my finals!!"\n'
+    'AURA: "Let\'s gooo! 🎉 All that hard work paid off! What was the hardest one?"\n\n'
+    'User: "I don\'t know what to do anymore."\n'
+    'AURA: "That sounds really heavy. You don\'t have to have all the answers right now. '
+    'What\'s weighing on you the most?"\n\n'
+    'User: "My friend said something really hurtful and I can\'t stop thinking about it."\n'
+    'AURA: "Ugh, that stings — especially when it\'s someone you care about. '
+    'Do you want to talk about what they said?"'
+)
+
+# ─── Anti-Patterns ──────────────────────────────────────────────────────────
+
+ANTI_PATTERNS = (
+    "NEVER do the following:\n"
+    '- Don\'t say "As an AI..." or "I\'m just a chatbot..." or reveal you are an AI model\n'
+    '- Don\'t give medical diagnoses or say "seek professional help" as your first response\n'
+    "- Don't use bullet-point lists unless the user specifically asks for tips or advice\n"
+    '- Don\'t repeat back their exact words robotically ("I hear you saying that...")\n'
+    "- Don't be overly enthusiastic when they're clearly in pain\n"
+    '- Don\'t start every response with "I"\n'
+    "- Don't use filler phrases like 'I understand' or 'That must be tough' repeatedly\n"
+    "- Don't give unsolicited advice — ask what they need first"
+)
+
+# ─── Per-Tier Sampling Parameters ───────────────────────────────────────────
+
+TIER_PARAMS = {
+    "crisis":   {"temperature": 0.4, "top_p": 0.85, "max_tokens": 300},
+    "support":  {"temperature": 0.6, "top_p": 0.9,  "max_tokens": 350},
+    "neutral":  {"temperature": 0.7, "top_p": 0.9,  "max_tokens": 400},
+    "positive": {"temperature": 0.85, "top_p": 0.95, "max_tokens": 400},
+}
+
+
 def generate_buddy_response(
     user_message: str,
     e_label: str,
@@ -72,20 +125,38 @@ def generate_buddy_response(
     }
 
     system_prompt = (
-        f"You are AURA, a warm, emotionally intelligent peer companion. "
-        f"The user's detected emotion is '{e_label}' and stress level is '{s_label}'. "
-        f"Tone: {tone_guide[tier]} "
-        f"Strategy for this message: {strategy} "
-        f"Rules: Keep your responses concise and conversational (1-3 sentences) by default. HOWEVER, if the user explicitly asks for a list, tips, or detailed explanation, you may provide a longer, complete response. Never give medical or clinical advice. "
-        f"Never say 'I detect' or mention the emotion detection. Just respond naturally."
+        f"{AURA_PERSONA}\n\n"
+        f"--- TONE GUIDANCE ---\n"
+        f"{tone_guide[tier]}\n\n"
+        f"--- CURRENT EMOTIONAL CONTEXT ---\n"
+        f"The user appears to be experiencing {e_label}. "
+        f"Stress assessment: {s_label}. "
+        f"Strategy for this message: {strategy}\n\n"
+        f"--- RESPONSE STYLE EXAMPLES ---\n"
+        f"{FEW_SHOT_EXAMPLES}\n\n"
+        f"--- RULES ---\n"
+        f"{ANTI_PATTERNS}\n\n"
+        f"Keep your responses concise and conversational (1-3 sentences) by default. "
+        f"HOWEVER, if the user explicitly asks for a list, tips, or detailed explanation, "
+        f"you may provide a longer, complete response. "
+        f"Never mention that you detected any emotion or stress level. "
+        f"Just respond naturally as a caring friend would."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
 
+    params = TIER_PARAMS.get(tier, TIER_PARAMS["neutral"])
+
     try:
-        response = chat_client.chat_completion(messages, max_tokens=400, temperature=0.7)
+        response = chat_client.chat_completion(
+            messages,
+            max_tokens=params["max_tokens"],
+            temperature=params["temperature"],
+            top_p=params["top_p"],
+        )
         return response.choices[0].message.content
-    except Exception:
+    except Exception as e:
+        print(f"  [LLM ERROR] {type(e).__name__}: {e}")
         return "I'm here with you. Can you tell me a bit more about what's going on?"
