@@ -24,7 +24,11 @@ class SignInRequest(BaseModel):
     lat:Optional[str]=None
     long:Optional[str]=None
     
-
+class ChangePasswordRequest(BaseModel):
+    user_id: int
+    current_password: str
+    new_password: str
+    
 class SessionCreate(BaseModel):
     user_id: int
     title: str

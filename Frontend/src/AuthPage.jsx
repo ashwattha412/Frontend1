@@ -87,7 +87,6 @@ export default function AuthPage({ onLoginSuccess }) {
       // Fetch location — ask once, stop if blocked
       let lat = null;
       let long = null;
-      /*
       try {
         const position = await new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 });
@@ -97,7 +96,6 @@ export default function AuthPage({ onLoginSuccess }) {
       } catch (err) {
         console.warn("Location unavailable:", err.message);
       }
-      */
 
       // Call backend signin
       const response = await fetch(`${BACKEND_URL}/auth/signin`, {

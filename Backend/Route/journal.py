@@ -84,3 +84,16 @@ def update_journal(entry_id: int, entry: JournalEntryUpdate):
     if not result.data:
         raise HTTPException(status_code=404, detail="Journal entry not found")
     return {"message": "Journal updated", "data": serialize_journal(result.data[0])}
+
+@router.delete("/{entry_id}")
+def delete_journal(entry_id: int, user_id: int):
+    existing = supabase.table("journal_log").select("user_id").eq("id", entry_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+    if existing.data[0]["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this entry")
+
+    result = supabase.table("journal_log").delete().eq("id", entry_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=400, detail="Failed to delete journal entry")
+    return {"message": "Journal deleted", "data": serialize_journal(result.data[0])}
