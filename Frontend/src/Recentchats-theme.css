@@ -1,0 +1,98 @@
+/* RecentChats-theme.css
+   ────────────────────────────────────────────────────────────────────────
+   Scoped to .dori-recent-chats so it never leaks into the rest of the app.
+
+   Light mode reuses Dori's everyday cream + sage palette so the page still
+   feels like part of the same notebook.
+
+   Dark mode is a deliberate departure: a frosted late-night blue instead of
+   the app's usual dark purple. It echoes the ❄️ ⭐ snow motifs Dashboard
+   already floats through the chat view in dark mode — so "Recent Chats"
+   reads like flipping back through old, frosty pages.
+
+   If you'd rather keep one theme file, just paste the two blocks below into
+   Dashboard-theme.css and delete the `import './RecentChats-theme.css'`
+   line at the top of RecentChats.jsx — the variable names won't collide
+   with anything already in there.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.dori-recent-chats {
+  --rc-bg: #FAF7F2;
+  --rc-divider: #EEF2EC;
+
+  --rc-text-primary: #5F554D;
+  --rc-text-secondary: rgba(95, 85, 77, 0.55);
+
+  --rc-card-bg: #FFFFFF;
+  --rc-card-border: #EEF2EC;
+  --rc-card-hover-bg: #F3F0EA;
+  --rc-icon-bg: #EEF2EC;
+
+  --rc-pill-bg: #EEF2EC;
+  --rc-accent: #8FAE93;
+  --rc-accent-text: #FFFFFF;
+
+  --rc-search-bg: #FFFFFF;
+  --rc-search-border: #EEF2EC;
+  --rc-search-glow: rgba(183, 201, 187, 0.45);
+  --rc-search-icon: rgba(95, 85, 77, 0.4);
+
+  transition: background 0.4s ease;
+}
+
+[data-theme="dark"] .dori-recent-chats {
+  --rc-bg: linear-gradient(180deg, #0A1830 0%, #0F2542 100%);
+  --rc-divider: rgba(143, 199, 235, 0.12);
+
+  --rc-text-primary: #EAF4FF;
+  --rc-text-secondary: rgba(180, 212, 240, 0.6);
+
+  --rc-card-bg: rgba(255, 255, 255, 0.04);
+  --rc-card-border: rgba(143, 199, 235, 0.14);
+  --rc-card-hover-bg: rgba(143, 199, 235, 0.09);
+  --rc-icon-bg: rgba(143, 199, 235, 0.12);
+
+  --rc-pill-bg: rgba(143, 199, 235, 0.10);
+  --rc-accent: #6FD0F0;
+  --rc-accent-text: #0A1830;
+
+  --rc-search-bg: rgba(111, 208, 240, 0.07);
+  --rc-search-border: rgba(111, 208, 240, 0.35);
+  --rc-search-glow: rgba(111, 208, 240, 0.32);
+  --rc-search-icon: #8FE0F7;
+}
+
+/* Soft icy glow, dark mode only — the page's one bit of atmosphere. */
+[data-theme="dark"] .dori-recent-chats::before {
+  content: '';
+  position: absolute;
+  top: -8%;
+  right: -12%;
+  width: 55%;
+  height: 38%;
+  background: radial-gradient(circle, rgba(111, 208, 240, 0.12), transparent 70%);
+  filter: blur(46px);
+  pointer-events: none;
+}
+
+.dori-recent-chats .dori-rc-search {
+  background: var(--rc-search-bg);
+  border: 1px solid var(--rc-search-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.3s ease;
+}
+
+.dori-recent-chats .dori-rc-search:focus-within {
+  box-shadow: 0 0 0 3px var(--rc-search-glow);
+}
+
+.dori-recent-chats .dori-rc-card {
+  background: var(--rc-card-bg);
+  border: 1px solid var(--rc-card-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.dori-recent-chats .dori-rc-card:hover {
+  background: var(--rc-card-hover-bg);
+}

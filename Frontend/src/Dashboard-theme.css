@@ -32,6 +32,11 @@
 
   /* Lantern (theme toggle) glow */
   --lantern-glow: #FFE888;
+
+  /* Breathing exercise phases */
+  --phase-inhale-bg: #EEF2EC;
+  --phase-hold-bg: #E5D6FF;
+  --phase-exhale-bg: #F5D6C6;
 }
 
 [data-theme="dark"] {
@@ -61,6 +66,11 @@
 
   /* Lantern (theme toggle) glow */
   --lantern-glow: #0A97B0;
+
+  /* Breathing exercise phases */
+  --phase-inhale-bg: #045258;
+  --phase-hold-bg: #2B133B;
+  --phase-exhale-bg: #3A195E;
 }
 
 /* Chat input bar: glowing focus ring using the theme's accent color */
@@ -106,4 +116,25 @@
   --journal-selected-bg: #0A97B0;  /* electric blue */
   --journal-primary-btn: #0A97B0;  /* electric blue */
   --journal-border: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Spiral rings (notebook binding) ───────────────────────────────────────
+   Light: parchment/metal look, unchanged from before.
+   Dark: a light glowing blue — rings read like they're lit from within. */
+:root, [data-theme="light"] {
+  --spiral-strip-from: #E2DDD7;
+  --spiral-strip-to: #EAE6E1;
+  --spiral-strip-border: rgba(95, 85, 77, 0.12);
+  --spiral-ring-bg: #FFFFFF;
+  --spiral-ring-border: rgba(95, 85, 77, 0.22);
+  --spiral-ring-shadow: inset 0 1px 3px rgba(95, 85, 77, 0.14), 0 1px 2px rgba(95, 85, 77, 0.08);
+}
+
+[data-theme="dark"] {
+  --spiral-strip-from: #0E1530;
+  --spiral-strip-to: #15203F;
+  --spiral-strip-border: rgba(10, 151, 176, 0.25);
+  --spiral-ring-bg: #BFEFFA;
+  --spiral-ring-border: rgba(10, 151, 176, 0.6);
+  --spiral-ring-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.4), 0 0 6px rgba(10, 151, 176, 0.85), 0 0 14px rgba(10, 151, 176, 0.45);
 }

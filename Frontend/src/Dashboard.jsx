@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import './Dashboard-theme.css';
+import RecentChats from './Recentchats';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -314,26 +315,43 @@ function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
   );
 }
 
-function SpiralRings({ count = 13 }) {
+// `dusty` locks the rings to the original sepia look regardless of theme —
+// used by the Past Entries panel and past-entry detail modal, since those
+// pages are meant to read as aged paper in both light AND dark mode.
+// Leave `dusty` off (default) for the live notebook page, which DOES
+// theme-shift — parchment in light, glowing blue in dark.
+function SpiralRings({ count = 13, dusty = false }) {
+  const dustyVars = {
+    stripFrom: '#E2DDD7',
+    stripTo: '#EAE6E1',
+    stripBorder: 'rgba(95,85,77,0.12)',
+    ringBg: 'white',
+    ringBorder: 'rgba(95,85,77,0.22)',
+    ringShadow: 'inset 0 1px 3px rgba(95,85,77,0.14), 0 1px 2px rgba(95,85,77,0.08)',
+  };
+
   return (
     <div
-      className="flex-shrink-0 flex items-center justify-around px-3"
+      className={`flex-shrink-0 flex items-center justify-around px-3 ${dusty ? '' : 'transition-colors duration-300'}`}
       style={{
         height: 30,
-        background: 'linear-gradient(to bottom, #E2DDD7, #EAE6E1)',
-        borderBottom: '1px solid rgba(95,85,77,0.12)',
+        background: dusty
+          ? `linear-gradient(to bottom, ${dustyVars.stripFrom}, ${dustyVars.stripTo})`
+          : 'linear-gradient(to bottom, var(--spiral-strip-from), var(--spiral-strip-to))',
+        borderBottom: dusty ? `1px solid ${dustyVars.stripBorder}` : '1px solid var(--spiral-strip-border)',
       }}
     >
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
+          className={dusty ? '' : 'transition-colors duration-300'}
           style={{
             width: 13,
             height: 19,
             borderRadius: '45%',
-            border: '1.5px solid rgba(95,85,77,0.22)',
-            background: 'white',
-            boxShadow: 'inset 0 1px 3px rgba(95,85,77,0.14), 0 1px 2px rgba(95,85,77,0.08)',
+            border: dusty ? `1.5px solid ${dustyVars.ringBorder}` : '1.5px solid var(--spiral-ring-border)',
+            background: dusty ? dustyVars.ringBg : 'var(--spiral-ring-bg)',
+            boxShadow: dusty ? dustyVars.ringShadow : 'var(--spiral-ring-shadow)',
           }}
         />
       ))}
@@ -1063,7 +1081,7 @@ function JournalView({ user, sessionId }) {
             }}
             onClick={e => e.stopPropagation()}
           >
-            <SpiralRings count={13} />
+            <SpiralRings count={13} dusty />
 
             <div className="flex-shrink-0 flex items-center justify-between px-7 py-4 border-b border-[rgba(120,98,66,0.15)]">
               <div>
@@ -1154,7 +1172,7 @@ function JournalView({ user, sessionId }) {
             }}
             onClick={e => e.stopPropagation()}
           >
-            <SpiralRings count={11} />
+            <SpiralRings count={11} dusty />
 
             <div className="flex-shrink-0 flex items-start justify-between px-7 py-4">
               <div>
@@ -1423,7 +1441,7 @@ export default function Dashboard({ user, onLogout }) {
         if (type === 'TAKE_OVER') {
           clearInterval(lsTimer);
           document.removeEventListener('visibilitychange', handleVisibility);
-          try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+          try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
           channel.close();
           setSessionDisplaced(true);
         }
@@ -1445,7 +1463,7 @@ export default function Dashboard({ user, onLogout }) {
           broadcastChannelRef.current?.close();
           setSessionDisplaced(true);
         }
-      } catch (_) {}
+      } catch (e) { /* ignore */ }
     };
     window.addEventListener('storage', handleStorage);
 
@@ -1505,7 +1523,7 @@ export default function Dashboard({ user, onLogout }) {
           clearInterval(heartbeatTimerRef.current);
           setSessionDisplaced(true);
         }
-      } catch (_) {}
+      } catch (e) { /* ignore */ }
     };
 
     // Run heartbeat first so our last_seen_at is written to DB immediately,
@@ -1753,7 +1771,7 @@ export default function Dashboard({ user, onLogout }) {
   const handleDeleteSession = async (sessId) => {
     try {
       await fetch(`${BACKEND_URL}/sessions/${sessId}`, { method: "DELETE" });
-    } catch (_) {}
+    } catch (e) { /* ignore */ }
     setSessions(prev => prev.filter(s => s.id !== sessId));
     if (sessionActivityRef.current[sessId] !== undefined) {
       const { [sessId]: _removed, ...rest } = sessionActivityRef.current;
@@ -1794,7 +1812,7 @@ export default function Dashboard({ user, onLogout }) {
 
   const handleLogout = async () => {
     if (user?.logId) {
-      try { await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: "POST" }); } catch (_) {}
+      try { await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: "POST" }); } catch (e) { /* ignore */ }
     }
     if (user?.id) {
       // Clear chat session tracker
@@ -1811,7 +1829,7 @@ export default function Dashboard({ user, onLogout }) {
         const stored = JSON.parse(raw);
         if (stored.instanceId === instanceIdRef.current) localStorage.removeItem(STORAGE_KEY);
       }
-    } catch (_) {}
+    } catch (e) { /* ignore */ }
 
     clearInterval(heartbeatTimerRef.current);
     broadcastChannelRef.current?.close();
@@ -1832,13 +1850,13 @@ export default function Dashboard({ user, onLogout }) {
         timestamp:  Date.now(),
         takenOver:  true,
       }));
-    } catch (_) {}
+    } catch (e) { /* ignore */ }
 
     // Layer 2: tell backend to end all other sessions for this user
     if (user?.logId) {
       try {
         await fetch(`${BACKEND_URL}/auth/takeover/${user.logId}`, { method: 'POST' });
-      } catch (_) {}
+      } catch (e) { /* ignore */ }
     }
 
     setSessionConflict(false);
@@ -1855,7 +1873,7 @@ export default function Dashboard({ user, onLogout }) {
         const stored = JSON.parse(raw);
         if (stored.instanceId === myId) localStorage.removeItem(STORAGE_KEY);
       }
-    } catch (_) {}
+    } catch (e) { /* ignore */ }
 
     clearInterval(heartbeatTimerRef.current);
     broadcastChannelRef.current?.close();
@@ -1864,7 +1882,7 @@ export default function Dashboard({ user, onLogout }) {
     if (user?.logId) {
       try {
         await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: 'POST' });
-      } catch (_) {}
+      } catch (e) { /* ignore */ }
     }
 
     onLogout();
@@ -1873,9 +1891,9 @@ export default function Dashboard({ user, onLogout }) {
   // ─────────────────────────────────────────────────────────────────────────
 
   const phaseColors = {
-    Inhale: { bg: '#EEF2EC', text: '#5F554D', label: 'Breathe in slowly...' },
-    Hold:   { bg: '#E5D6FF', text: '#5F554D', label: 'Hold and be still...' },
-    Exhale: { bg: '#F5D6C6', text: '#5F554D', label: 'Let it all go...' },
+    Inhale: { bg: 'var(--phase-inhale-bg)', text: 'var(--text-primary)', label: 'Breathe in slowly...' },
+    Hold:   { bg: 'var(--phase-hold-bg)',   text: 'var(--text-primary)', label: 'Hold and be still...' },
+    Exhale: { bg: 'var(--phase-exhale-bg)', text: 'var(--text-primary)', label: 'Let it all go...' },
   };
 
   const renderNavItem = ({ id, icon, label }) => (
@@ -2095,6 +2113,13 @@ export default function Dashboard({ user, onLogout }) {
                     >
                       <span className="text-base">📓</span> Mood Journal
                     </button>
+                    <button
+                      onClick={() => { setProfileOpen(false); setView('recentChats'); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <span className="text-base">💬</span> Recent Chats
+                    </button>
                   </div>
 
                   <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--bg-sidebar)' }}>
@@ -2260,48 +2285,124 @@ export default function Dashboard({ user, onLogout }) {
 
         {/* ── VIEW: BREATHING ── */}
         {view === "breathing" && (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center transition-colors duration-1000" style={{ background:`linear-gradient(to bottom, #FAF7F2, ${phaseColors[breathPhase]?.bg || '#FAF7F2'})` }}>
+          <div
+            className="flex-1 flex flex-col items-center justify-center p-6 text-center transition-colors duration-1000"
+            style={{ background: `linear-gradient(to bottom, var(--bg-app), ${phaseColors[breathPhase]?.bg || 'var(--bg-app)'})` }}
+          >
             <div className="max-w-sm w-full space-y-6 flex flex-col items-center">
               <div>
-                <span className="px-4 py-1.5 bg-[#B7C9BB] text-[#5F554D] text-xs font-semibold uppercase tracking-widest rounded-full">Guided Grounding</span>
-                <h2 className="text-2xl md:text-3xl font-serif font-semibold text-[#5F554D] mt-3">Box Breathing</h2>
-                <p className="text-sm text-[#5F554D]/60 mt-1 font-medium">Follow the rabbit. 4 counts each phase.</p>
+                <span
+                  className="px-4 py-1.5 text-xs font-semibold uppercase tracking-widest rounded-full transition-colors duration-300"
+                  style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)' }}
+                >
+                  Guided Grounding
+                </span>
+                <h2 className="text-2xl md:text-3xl font-serif font-semibold mt-3 transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
+                  Box Breathing
+                </h2>
+                <p className="text-sm mt-1 font-medium transition-colors duration-300" style={{ color: 'var(--text-secondary)' }}>
+                  Follow the rabbit. 4 counts each phase.
+                </p>
               </div>
-              <div className="relative flex items-center justify-center" style={{ width:240, height:240 }}>
-                <div style={{ position:'absolute', width:220, height:220, borderRadius:'50%', border:'3px solid', borderColor: phaseColors[breathPhase]?.text || '#5F554D', opacity: breathActive ? (breathPhase === 'Hold' ? 0.4 : 0.15) : 0.1, transform: `scale(${breathActive ? breathScale*1.2 : 1})`, transition: breathPhase === 'Hold' ? 'opacity 0.5s ease' : 'transform 4s linear, opacity 0.5s ease' }} />
-                <div style={{ width:180, height:180, borderRadius:'50%', background:'white', boxShadow:'0 8px 24px rgba(95,85,77,0.12)', display:'flex', alignItems:'center', justifyContent:'center', transform:`scale(${breathActive ? breathScale : 1})`, transition: breathPhase === 'Hold' ? 'none' : 'transform 4s linear', position:'relative', zIndex:10 }}>
+
+              <div className="relative flex items-center justify-center" style={{ width: 240, height: 240 }}>
+                <div
+                  style={{
+                    position: 'absolute', width: 220, height: 220, borderRadius: '50%', border: '3px solid',
+                    borderColor: phaseColors[breathPhase]?.text || 'var(--text-primary)',
+                    opacity: breathActive ? (breathPhase === 'Hold' ? 0.4 : 0.15) : 0.1,
+                    transform: `scale(${breathActive ? breathScale * 1.2 : 1})`,
+                    transition: breathPhase === 'Hold' ? 'opacity 0.5s ease' : 'transform 4s linear, opacity 0.5s ease',
+                  }}
+                />
+                <div
+                  className="transition-colors duration-300"
+                  style={{
+                    width: 180, height: 180, borderRadius: '50%',
+                    background: 'var(--bg-recent-item)',
+                    boxShadow: '0 8px 24px rgba(95,85,77,0.12)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transform: `scale(${breathActive ? breathScale : 1})`,
+                    transition: breathPhase === 'Hold' ? 'background-color 0.3s ease' : 'transform 4s linear, background-color 0.3s ease',
+                    position: 'relative', zIndex: 10,
+                  }}
+                >
                   <RabbitSVG phase={breathActive ? breathPhase : 'Hold'} size={130} />
                 </div>
               </div>
+
               {breathActive ? (
                 <div className="space-y-3 w-full">
-                  <p className="text-xl md:text-2xl font-serif font-semibold transition-colors duration-700" style={{ color: phaseColors[breathPhase]?.text }}>{phaseColors[breathPhase]?.label}</p>
-                  <div className="w-full bg-[#EEF2EC] rounded-full h-2 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-1000" style={{ width:`${((4-counter+1)/4)*100}%`, background: phaseColors[breathPhase]?.text }} />
+                  <p className="text-xl md:text-2xl font-serif font-semibold transition-colors duration-300" style={{ color: phaseColors[breathPhase]?.text }}>
+                    {phaseColors[breathPhase]?.label}
+                  </p>
+                  <div className="w-full rounded-full h-2 overflow-hidden transition-colors duration-300" style={{ background: 'var(--bg-sidebar)' }}>
+                    <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${((4 - counter + 1) / 4) * 100}%`, background: phaseColors[breathPhase]?.text }} />
                   </div>
                   <div className="flex items-center justify-center gap-4">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center font-semibold text-xl shadow-sm" style={{ background: phaseColors[breathPhase]?.bg, color: phaseColors[breathPhase]?.text }}>{counter}</div>
-                    {cycleCount > 0 && <p className="text-xs text-[#5F554D]/60 font-medium">{cycleCount} cycle{cycleCount>1?'s':''} complete ✦</p>}
+                    <div
+                      className="w-12 h-12 rounded-full flex items-center justify-center font-semibold text-xl shadow-sm transition-colors duration-300"
+                      style={{ background: phaseColors[breathPhase]?.bg, color: phaseColors[breathPhase]?.text }}
+                    >
+                      {counter}
+                    </div>
+                    {cycleCount > 0 && (
+                      <p className="text-xs font-medium transition-colors duration-300" style={{ color: 'var(--text-secondary)' }}>
+                        {cycleCount} cycle{cycleCount > 1 ? 's' : ''} complete ✦
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-[#5F554D]/60 font-medium">Tap start when you're ready. Sit comfortably and breathe normally.</p>
+                <p className="text-sm font-medium transition-colors duration-300" style={{ color: 'var(--text-secondary)' }}>
+                  Tap start when you're ready. Sit comfortably and breathe normally.
+                </p>
               )}
+
               <div className="flex gap-3">
-                <button onClick={() => setBreathActive(p => !p)} className="px-7 py-3 font-semibold text-sm uppercase tracking-wider rounded-full shadow-sm active:scale-95 transition-all" style={{ background: breathActive ? '#EEF2EC' : '#5F554D', color: breathActive ? '#5F554D' : 'white' }}>
+                <button
+                  onClick={() => setBreathActive(p => !p)}
+                  className="px-7 py-3 font-semibold text-sm uppercase tracking-wider rounded-full shadow-sm active:scale-95 transition-all"
+                  style={{
+                    background: breathActive ? 'var(--bg-sidebar)' : 'var(--journal-primary-btn)',
+                    color: breathActive ? 'var(--text-primary)' : 'white',
+                  }}
+                >
                   {breathActive ? "Pause" : "Start"}
                 </button>
                 {breathActive && (
-                  <button onClick={() => { setBreathActive(false); setBreathPhase('Inhale'); setBreathScale(1.0); setCounter(4); setCycleCount(0); }} className="px-5 py-3 font-semibold text-xs uppercase tracking-wider rounded-full bg-white text-[#5F554D]/70 shadow-sm transition-all active:scale-95">Reset</button>
+                  <button
+                    onClick={() => { setBreathActive(false); setBreathPhase('Inhale'); setBreathScale(1.0); setCounter(4); setCycleCount(0); }}
+                    className="px-5 py-3 font-semibold text-xs uppercase tracking-wider rounded-full shadow-sm transition-all active:scale-95"
+                    style={{ background: 'var(--bg-recent-item)', color: 'var(--text-primary)' }}
+                  >
+                    Reset
+                  </button>
                 )}
               </div>
-              <button onClick={() => setView('chat')} className="text-xs font-medium text-[#5F554D]/60 underline underline-offset-2 hover:text-[#5F554D] transition-colors">Return to chat</button>
+              <button
+                onClick={() => setView('chat')}
+                className="text-xs font-medium underline underline-offset-2 transition-colors hover:opacity-70"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                Return to chat
+              </button>
             </div>
           </div>
         )}
 
         {/* ── VIEW: JOURNAL ── */}
         {view === 'journal' && <JournalView user={user} sessionId={activeSessionId} />}
+
+        {/* ── VIEW: RECENT CHATS ── */}
+        {view === 'recentChats' && (
+          <RecentChats
+            user={user}
+            sessions={sessions}
+            onBack={() => setView('chat')}
+            onSelectSession={(id) => { setActiveSessionId(id); setView('chat'); }}
+          />
+        )}
       </div>
 
       {/* ── CHANGE PASSWORD MODAL ── */}
