@@ -56,3 +56,6 @@ class JournalEntryCreate(BaseModel):
 class JournalEntryUpdate(BaseModel):
     user_id: int
     content: str
+
+class MessageReaction(BaseModel):
+    reaction: Optional[str] = None
