@@ -1257,7 +1257,7 @@ function JournalView({ user, sessionId }) {
 }
 
 // ─── MAIN DASHBOARD ─────────────────────────────────────────────────────────
-export default function Dashboard({ user, onLogout }) {
+export default function Dashboard({ user, onLogout, onNavigate }) {
   const [view,        setView]        = useState('chat');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth,setSidebarWidth]= useState(280);
@@ -1942,6 +1942,13 @@ export default function Dashboard({ user, onLogout }) {
                 {renderNavItem({ id: 'chat', icon: '💬', label: 'Companion Chat' })}
                 {renderNavItem({ id: 'breathing', icon: '🌬️', label: 'Breathing Exercise' })}
                 {renderNavItem({ id: 'journal', icon: '📓', label: 'Mood Journal' })}
+                <button
+                  onClick={() => onNavigate?.('insights')}
+                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 text-[#5F554D]/70 hover:bg-white/70 active:scale-[0.98]"
+                >
+                  <span>✨</span>
+                  {sidebarOpen && <span>My Insights</span>}
+                </button>
                 <button
                   onClick={() => { handleStartNewChat(); setView('chat'); if (window.innerWidth < 768) setSidebarOpen(false); }}
                   className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 text-[#5F554D]/70 hover:bg-white/70 active:scale-[0.98]"
