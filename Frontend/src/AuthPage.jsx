@@ -129,7 +129,8 @@ export default function AuthPage({ onLoginSuccess }) {
         name: data.name,
         email: loginMethod === 'email' ? identifier : '',
         id: data.user_id,
-        logId: data.log_id
+        logId: data.log_id,
+        isAdmin: data.is_admin || false
       });
 
     } catch (err) {

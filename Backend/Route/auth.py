@@ -69,6 +69,7 @@ def signin(user: SignInRequest):
         "name": db_user["name"],
         "user_id": db_user["id"],
         "log_id": log_id,
+        "is_admin": db_user.get("is_admin", False),
     }
 
 

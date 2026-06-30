@@ -9,6 +9,7 @@ from Route.auth import router as auth_router
 from Route.sessions import router as sessions_router
 from Route.messages import router as messages_router
 from Route.journal import router as journals_router
+from Route.analytics import router as analytics_router
 from Database.Supabase import supabase
 
 load_dotenv(override=True)
@@ -34,6 +35,7 @@ app.include_router(auth_router)
 app.include_router(sessions_router)
 app.include_router(messages_router)
 app.include_router(journals_router)
+app.include_router(analytics_router)
 
 
 @app.get("/")
