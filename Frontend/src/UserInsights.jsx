@@ -19,9 +19,12 @@ export default function UserInsights({ user, onBack }) {
   const [weeklyData, setWeeklyData] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadDashboardData() {
       try {
         setLoading(true);
+        setError(null);
         const userId = user?.id;
         if (!userId) {
           throw new Error("Log in again to load your user profile.");
@@ -43,18 +46,23 @@ export default function UserInsights({ user, onBack }) {
           getWeeklySummary(userId)
         ]);
 
+        if (cancelled) return;
+
         setStats(fetchedStats);
         setStressData({ 7: stress7, 30: stress30, 0: stress0 });
         setEmotionData({ 7: emotions7, 30: emotions30, 0: emotions0 });
         setWeeklyData(weekly);
         setLoading(false);
       } catch (err) {
+        if (cancelled) return;
         console.error("Dashboard fetching error:", err);
         setError(err.message || "Failed to retrieve real-time wellness insights.");
         setLoading(false);
       }
     }
     loadDashboardData();
+
+    return () => { cancelled = true; };
   }, [user?.id]);
 
   if (loading) {
