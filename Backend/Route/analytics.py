@@ -217,6 +217,22 @@ def get_user_sessions_summary(user_id: int):
             .execute()
         total_messages = len(msg_result.data) if msg_result.data else 0
         
+        # Fallback: if raw tables return 0, try analytics_snapshot for historical data
+        if total_sessions == 0 and total_messages == 0:
+            try:
+                snap_result = supabase.table("analytics_snapshot") \
+                    .select("snapshot_date, message_count") \
+                    .eq("user_id", user_id) \
+                    .execute()
+                snap_data = snap_result.data or []
+                if snap_data:
+                    # Unique snapshot dates ≈ number of active session days
+                    unique_dates = set(r["snapshot_date"] for r in snap_data if r.get("snapshot_date"))
+                    total_sessions = len(unique_dates)
+                    total_messages = sum(r.get("message_count", 0) for r in snap_data)
+            except Exception as e:
+                print(f"Warning: analytics_snapshot fallback failed: {e}")
+        
         avg_messages = round(total_messages / total_sessions, 1) if total_sessions > 0 else 0
         
         # Generate raw daily messages count for sparkline (last 30 days)
@@ -227,11 +243,26 @@ def get_user_sessions_summary(user_id: int):
             .eq("sender", "user") \
             .gte("created_at", cutoff) \
             .execute()
-            
+        
         sparkline_counts = {}
         for r in daily_msgs_result.data or []:
             date_str = r["created_at"][:10]
             sparkline_counts[date_str] = sparkline_counts.get(date_str, 0) + 1
+        
+        # If sparkline is empty, also try analytics_snapshot for sparkline data
+        if not sparkline_counts:
+            try:
+                snap_spark = supabase.table("analytics_snapshot") \
+                    .select("snapshot_date, message_count") \
+                    .eq("user_id", user_id) \
+                    .gte("snapshot_date", cutoff) \
+                    .execute()
+                for r in snap_spark.data or []:
+                    d = r.get("snapshot_date")
+                    if d:
+                        sparkline_counts[d] = sparkline_counts.get(d, 0) + r.get("message_count", 0)
+            except Exception:
+                pass
             
         # Compile lists
         sparkline = []
