@@ -46,7 +46,7 @@ export default function WeeklySummary({ data }) {
     <div className="insight-card">
       <span className="insight-card-title">Weekly Summary</span>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24, marginTop: 12 }}>
         {/* Emotion Trends Line Chart */}
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>

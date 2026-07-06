@@ -88,8 +88,8 @@ export default function EmotionChart({ datasets }) {
         ))}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-        <div style={{ width: 200, height: 200 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <div style={{ width: 200, height: 200, minWidth: 160, flex: '0 0 auto' }}>
           <ResponsiveContainer>
             <PieChart>
               <Pie
@@ -114,7 +114,7 @@ export default function EmotionChart({ datasets }) {
           </ResponsiveContainer>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 140px', minWidth: 120 }}>
           {chartData.map((entry) => (
             <div key={entry.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
               <div style={{ width: 10, height: 10, borderRadius: 3, background: getColor(entry.name), flexShrink: 0 }} />

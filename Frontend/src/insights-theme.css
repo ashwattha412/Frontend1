@@ -42,10 +42,10 @@
 /* ── Dark mode overrides ───────────────────────────────────────────────── */
 [data-theme="dark"] {
   --insight-bg: #060F2B;
-  --insight-card: rgba(25, 11, 36, 0.75);
-  --insight-card-border: rgba(10, 151, 176, 0.2);
-  --insight-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
-  --insight-card-hover: rgba(25, 11, 36, 0.9);
+  --insight-card: rgba(25, 11, 36, 0.85);
+  --insight-card-border: rgba(10, 151, 176, 0.25);
+  --insight-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 0 1px rgba(10, 151, 176, 0.15);
+  --insight-card-hover: rgba(30, 16, 48, 0.95);
   --insight-accent-1: #0A97B0;
   --insight-accent-2: #A78BFA;
   --insight-accent-3: #2DD4BF;
@@ -101,18 +101,29 @@
   border-radius: 20px;
   padding: 24px;
   box-shadow: var(--insight-card-shadow);
-  transition: all 0.3s ease;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: cardEntranceUp 0.5s ease-out both;
 }
 
 .insight-card:hover {
   background: var(--insight-card-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(95, 85, 77, 0.1);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(95, 85, 77, 0.12);
+  border-color: rgba(183, 201, 187, 0.5);
 }
 
 [data-theme="dark"] .insight-card:hover {
-  box-shadow: 0 8px 32px rgba(10, 151, 176, 0.15);
+  box-shadow: 0 12px 40px rgba(10, 151, 176, 0.2), 0 0 1px rgba(10, 151, 176, 0.4);
+  border-color: rgba(10, 151, 176, 0.4);
 }
+
+/* Staggered entrance for stat cards and charts */
+.insights-grid-stats .insight-card:nth-child(1) { animation-delay: 0.1s; }
+.insights-grid-stats .insight-card:nth-child(2) { animation-delay: 0.2s; }
+.insights-grid-stats .insight-card:nth-child(3) { animation-delay: 0.3s; }
+.insights-grid-charts .insight-card:nth-child(1) { animation-delay: 0.35s; }
+.insights-grid-charts .insight-card:nth-child(2) { animation-delay: 0.45s; }
+.insights-grid-full .insight-card { animation-delay: 0.5s; }
 
 .insight-card-title {
   font-size: 13px;
@@ -405,8 +416,28 @@
 @media (max-width: 640px) {
   .insights-grid-stats { grid-template-columns: 1fr; }
   .admin-grid-kpi { grid-template-columns: 1fr; }
-  .insights-header, .admin-header { padding: 16px 20px; }
-  .insights-grid, .admin-grid { padding: 16px 20px; }
+  .insights-header, .admin-header {
+    padding: 16px 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .insights-grid, .admin-grid { padding: 12px 16px; gap: 14px; }
+  .insight-card { padding: 18px; border-radius: 16px; }
+  .insight-card-value { font-size: 28px; }
+  .insight-card-title { font-size: 11px; }
+  .insight-card-trend { font-size: 11px; }
+  .time-pills { gap: 4px; }
+  .time-pill { padding: 4px 10px; font-size: 11px; }
+}
+
+@media (max-width: 480px) {
+  .insights-grid { padding: 10px 12px; gap: 12px; }
+  .insight-card { padding: 16px; border-radius: 14px; }
+  .insight-card-value { font-size: 24px; }
+  .wellness-ring-value { font-size: 22px; }
+  .insight-back-btn { font-size: 12px; padding: 6px 12px; }
+  .insights-header, .admin-header { padding: 12px; }
 }
 
 /* ── Recharts tooltip override ─────────────────────────────────────────── */
@@ -421,4 +452,22 @@
 .admin-page .recharts-default-tooltip {
   background: var(--admin-card) !important;
   border: 1px solid var(--admin-card-border) !important;
+}
+
+/* ── Dark mode insight page background glow ─────────────────────────────── */
+[data-theme="dark"] .insights-page {
+  background: linear-gradient(180deg, #060F2B 0%, #0D1A3A 40%, #131030 100%);
+}
+
+[data-theme="dark"] .insights-page::before {
+  content: '';
+  position: fixed;
+  top: -10%;
+  left: 20%;
+  width: 60%;
+  height: 50%;
+  background: radial-gradient(ellipse, rgba(10, 151, 176, 0.08) 0%, transparent 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
 }

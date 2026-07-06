@@ -45,7 +45,7 @@ export default function WellnessScore({ score = 0, size = 140 }) {
           />
         </svg>
         <div className="wellness-ring-text">
-          <div className="wellness-ring-value" style={{ color }}>{score}</div>
+          <div className="wellness-ring-value" style={{ color, textShadow: `0 0 12px ${color}40`, animation: 'subtlePulse 3s ease-in-out infinite' }}>{score}</div>
           <div className="wellness-ring-label">out of 100</div>
         </div>
       </div>

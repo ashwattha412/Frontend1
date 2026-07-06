@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './insights-theme.css';
 import './Dashboard-theme.css';
 import StatCard from './components/StatCard';
@@ -17,14 +17,17 @@ export default function UserInsights({ user, onBack }) {
   const [stressData, setStressData] = useState(null);
   const [emotionData, setEmotionData] = useState(null);
   const [weeklyData, setWeeklyData] = useState(null);
+  const retryRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadDashboardData() {
+    async function loadDashboardData(isRetry = false) {
       try {
-        setLoading(true);
-        setError(null);
+        if (!isRetry) {
+          setLoading(true);
+          setError(null);
+        }
         const userId = user?.id;
         if (!userId) {
           throw new Error("Log in again to load your user profile.");
@@ -48,6 +51,18 @@ export default function UserInsights({ user, onBack }) {
 
         if (cancelled) return;
 
+        // If stats came back as 0/0 and this is the first attempt, retry once
+        // after a short delay (backend may have returned fallback due to transient error)
+        if (!isRetry &&
+            (fetchedStats?.total_sessions ?? 0) === 0 &&
+            (fetchedStats?.total_messages ?? 0) === 0 &&
+            !retryRef.current) {
+          retryRef.current = true;
+          setTimeout(() => {
+            if (!cancelled) loadDashboardData(true);
+          }, 1500);
+        }
+
         setStats(fetchedStats);
         setStressData({ 7: stress7, 30: stress30, 0: stress0 });
         setEmotionData({ 7: emotions7, 30: emotions30, 0: emotions0 });
@@ -65,7 +80,10 @@ export default function UserInsights({ user, onBack }) {
     return () => { cancelled = true; };
   }, [user?.id]);
 
-  if (loading) {
+  // Determine if stats are still loading (null = first load)
+  const statsLoading = loading || stats === null;
+
+  if (loading && !stats) {
     return (
       <div className="insights-page" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16 }}>
         <div style={{
@@ -105,7 +123,7 @@ export default function UserInsights({ user, onBack }) {
     <div className="insights-page">
       {/* Header */}
       <div className="insights-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <button className="insight-back-btn" onClick={onBack}>
             ← Back to Chat
           </button>
@@ -119,7 +137,7 @@ export default function UserInsights({ user, onBack }) {
           </div>
         </div>
         <div style={{ fontSize: 12, color: '#6BCB77', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6BCB77', display: 'inline-block' }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6BCB77', display: 'inline-block', animation: 'subtlePulse 2s ease-in-out infinite' }} />
           Connected to database live updates
         </div>
       </div>
@@ -128,19 +146,21 @@ export default function UserInsights({ user, onBack }) {
       <div className="insights-grid insights-grid-stats">
         <StatCard
           title="Total Sessions"
-          value={stats?.total_sessions || 0}
+          value={stats?.total_sessions ?? 0}
           trend={12}
           icon="💬"
           sparklineData={stats?.sparkline}
+          loading={statsLoading}
         />
-        <WellnessScore score={stressData?.[7]?.wellness_score || 100.0} />
+        <WellnessScore score={stressData?.[7]?.wellness_score ?? 100.0} />
         <StatCard
           title="Total Messages"
-          value={stats?.total_messages || 0}
+          value={stats?.total_messages ?? 0}
           trend={8}
           trendLabel="this week"
           icon="✉️"
           sparklineData={stats?.sparkline?.map(v => v * 3 + Math.floor(Math.random() * 4))}
+          loading={statsLoading}
         />
       </div>
 

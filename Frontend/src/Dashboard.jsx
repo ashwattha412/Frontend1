@@ -293,20 +293,26 @@ function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed w-36 bg-white rounded-xl shadow-lg z-[100] overflow-hidden border border-[#EEF2EC]"
-      style={{ top, left }}
+      className="fixed w-36 rounded-xl shadow-lg z-[100] overflow-hidden"
+      style={{ top, left, background: 'var(--bg-menu)', border: '1px solid var(--menu-border)' }}
       onClick={e => e.stopPropagation()}
     >
       <button
         onClick={() => { onRename(); onClose(); }}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-[#5F554D] hover:bg-[#EEF2EC] transition-colors text-left"
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium transition-all text-left"
+        style={{ color: 'var(--menu-text)' }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       >
         <span>✏️</span> Rename
       </button>
-      <div className="border-t border-[#EEF2EC]" />
+      <div style={{ borderTop: '1px solid var(--menu-border)' }} />
       <button
         onClick={() => { onDelete(); onClose(); }}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors text-left"
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium transition-all text-left"
+        style={{ color: 'var(--menu-danger)' }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--menu-danger-bg)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       >
         <span>🗑️</span> Delete
       </button>
@@ -1753,18 +1759,17 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
   const handleReaction = (msgId, emoji) => {
     const msg = messages.find(m => m.id === msgId);
     if (!msg) return;
-    const isSelecting = msg.reaction !== emoji;
+    // If already reacted (locked), ignore all further clicks
+    if (msg.reaction !== null) return;
     
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reaction: isSelecting ? emoji : null } : m));
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reaction: emoji } : m));
     
-    if (isSelecting) {
-      const option = REACTION_OPTIONS.find(o => o.emoji === emoji);
-      if (option) {
-        const text = option.emoji === "😊" 
-          ? `[HIDDEN] *[User reacted to your message: made me smile ${option.emoji}]*` 
-          : `[HIDDEN] *[User reacted to your message: ${option.label.toLowerCase()} ${option.emoji}]*`;
-        sendChatMessage(text, true);
-      }
+    const option = REACTION_OPTIONS.find(o => o.emoji === emoji);
+    if (option) {
+      const text = option.emoji === "😊" 
+        ? `[HIDDEN] *[User reacted to your message: made me smile ${option.emoji}]*` 
+        : `[HIDDEN] *[User reacted to your message: ${option.label.toLowerCase()} ${option.emoji}]*`;
+      sendChatMessage(text, true);
     }
   };
 
@@ -1927,14 +1932,14 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
             <div className="flex-shrink-0 px-5 pt-5 space-y-5">
               <div className="flex flex-col items-center gap-1.5 px-1 pt-3 pb-2">
                 <div
-                  className="flex items-end justify-center rounded-2xl bg-white/60 shadow-sm"
-                  style={{ width: 88, height: 88, padding: 4 }}
+                  className="flex items-end justify-center rounded-2xl shadow-sm transition-all duration-300"
+                  style={{ width: 88, height: 88, padding: 4, background: 'var(--bg-card-glass)' }}
                 >
                   <RabbitSVG phase="Exhale" size={80} />
                 </div>
                 <div className="text-center leading-tight">
-                  <h1 className="font-serif text-xl font-semibold text-[#5F554D]">AURA</h1>
-                  <p className="text-[10px] text-[#5F554D]/50 font-medium tracking-wide">your wellness buddy</p>
+                  <h1 className="font-serif text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>AURA</h1>
+                  <p className="text-[10px] font-medium tracking-wide" style={{ color: 'var(--text-secondary)' }}>your wellness buddy</p>
                 </div>
               </div>
 
@@ -1944,14 +1949,20 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 {renderNavItem({ id: 'journal', icon: '📓', label: 'Mood Journal' })}
                 <button
                   onClick={() => onNavigate?.('insights')}
-                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 text-[#5F554D]/70 hover:bg-white/70 active:scale-[0.98]"
+                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 active:scale-[0.98]"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <span>✨</span>
                   {sidebarOpen && <span>My Insights</span>}
                 </button>
                 <button
                   onClick={() => { handleStartNewChat(); setView('chat'); if (window.innerWidth < 768) setSidebarOpen(false); }}
-                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 text-[#5F554D]/70 hover:bg-white/70 active:scale-[0.98]"
+                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 active:scale-[0.98]"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <span>＋</span>
                   {sidebarOpen && <span>New Chat</span>}
@@ -2100,36 +2111,31 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 {getInitials(user?.name)}
               </button>
               {profileOpen && (
-                <div className="absolute right-0 top-12 w-56 rounded-2xl shadow-md z-50 overflow-hidden" style={{ background: 'var(--bg-recent-item)' }}>
+                <div className="absolute right-0 top-12 w-56 rounded-2xl shadow-lg z-50 overflow-hidden" style={{ background: 'var(--bg-menu)', border: '1px solid var(--menu-border)', animation: 'cardEntranceUp 0.2s ease-out' }}>
                   <div className="px-4 py-3" style={{ background: 'var(--bg-sidebar)' }}>
                     <p className="font-serif font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{user?.name || 'Explorer'}</p>
                     <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--text-secondary)' }}>Mind Space Active ✦</p>
                   </div>
                   <div className="py-1.5">
-                    <button
-                      onClick={() => { setProfileOpen(false); setChangePasswordOpen(true); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      <span className="text-base">🔑</span> Change Password
-                    </button>
-                    <button
-                      onClick={() => { setProfileOpen(false); setView('journal'); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      <span className="text-base">📓</span> Mood Journal
-                    </button>
-                    <button
-                      onClick={() => { setProfileOpen(false); setView('recentChats'); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
-                      style={{ color: 'var(--text-primary)' }}
-                    >
-                      <span className="text-base">💬</span> Recent Chats
-                    </button>
+                    {[
+                      { action: () => { setProfileOpen(false); setChangePasswordOpen(true); }, icon: '🔑', label: 'Change Password' },
+                      { action: () => { setProfileOpen(false); setView('journal'); }, icon: '📓', label: 'Mood Journal' },
+                      { action: () => { setProfileOpen(false); setView('recentChats'); }, icon: '💬', label: 'Recent Chats' },
+                    ].map(item => (
+                      <button
+                        key={item.label}
+                        onClick={item.action}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all text-left"
+                        style={{ color: 'var(--text-primary)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <span className="text-base">{item.icon}</span> {item.label}
+                      </button>
+                    ))}
                   </div>
 
-                  <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--bg-sidebar)' }}>
+                  <div className="px-4 py-3" style={{ borderTop: '1px solid var(--menu-border)' }}>
                     <button
                       onClick={() => toggleDarkMode()}
                       className="w-full flex items-center justify-between"
@@ -2152,8 +2158,16 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                     </p>
                   </div>
 
-                  <div className="border-t py-1.5" style={{ borderColor: 'var(--bg-sidebar)' }}>
-                    <button onClick={() => { setProfileOpen(false); handleLogout(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-[#a04040] hover:bg-[#fff0ee] transition-colors text-left"><span className="text-base">🚪</span> Leave Space</button>
+                  <div className="py-1.5" style={{ borderTop: '1px solid var(--menu-border)' }}>
+                    <button
+                      onClick={() => { setProfileOpen(false); handleLogout(); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all text-left"
+                      style={{ color: 'var(--menu-danger)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--menu-danger-bg)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <span className="text-base">🚪</span> Leave Space
+                    </button>
                   </div>
                 </div>
               )}
@@ -2215,11 +2229,11 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 </div>
               ) : (
                 messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'} items-end gap-2`}>
+                  <div key={msg.id} className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'} items-end gap-2`} style={{ animation: 'chatFadeIn 0.4s ease-out both' }}>
                     {msg.isBot && <BuddyAvatar size={38} />}
                     <div className={`flex flex-col gap-2 max-w-[78%] md:max-w-[65%] ${msg.isBot ? 'items-start' : 'items-end'}`}>
                       <div
-                        className="p-4 rounded-3xl text-sm font-normal leading-relaxed shadow-sm"
+                        className="p-4 rounded-3xl text-sm font-normal leading-relaxed shadow-sm transition-all duration-200"
                         style={{
                           background: msg.isBot ? 'var(--bg-prompt-chip)' : 'var(--bg-active-tab)',
                           color: 'var(--text-primary)',
@@ -2231,18 +2245,25 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                       </div>
                       {msg.isBot && (
                         <div className="flex flex-wrap gap-1.5 pl-1">
-                          {REACTION_OPTIONS.map(({ emoji, label }) => (
-                            <button
-                              key={emoji}
-                              onClick={() => handleReaction(msg.id, emoji)}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all active:scale-95 border"
-                              style={
-                                msg.reaction === emoji
-                                  ? { background: 'var(--bg-active-tab)', color: 'var(--text-primary)', borderColor: 'transparent' }
-                                  : { background: 'var(--bg-prompt-chip)', color: 'var(--text-secondary)', borderColor: 'var(--bg-sidebar)' }
-                              }
-                            ><span>{emoji}</span> {label}</button>
-                          ))}
+                          {msg.reaction !== null ? (
+                            /* Locked state: only show the selected reaction */
+                            <span
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border"
+                              style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)', borderColor: 'transparent', animation: 'reactionPop 0.4s ease-out' }}
+                            >
+                              <span>{msg.reaction}</span> {REACTION_OPTIONS.find(o => o.emoji === msg.reaction)?.label}
+                            </span>
+                          ) : (
+                            /* Unlocked state: show all reaction options */
+                            REACTION_OPTIONS.map(({ emoji, label }) => (
+                              <button
+                                key={emoji}
+                                onClick={() => handleReaction(msg.id, emoji)}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all active:scale-95 border hover:scale-105 hover:shadow-sm"
+                                style={{ background: 'var(--bg-prompt-chip)', color: 'var(--text-secondary)', borderColor: 'var(--bg-sidebar)' }}
+                              ><span>{emoji}</span> {label}</button>
+                            ))
+                          )}
                         </div>
                       )}
                     </div>
@@ -2266,8 +2287,8 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                   <button
                     key={prompt}
                     onClick={() => setInput(prompt)}
-                    className="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-medium transition-all active:scale-95 shadow-sm"
-                    style={{ background: 'var(--bg-prompt-chip)', color: 'var(--text-primary)' }}
+                    className="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-medium transition-all active:scale-95 shadow-sm hover:scale-105 hover:shadow-md"
+                    style={{ background: 'var(--bg-prompt-chip)', color: 'var(--text-primary)', border: '1px solid var(--menu-border)' }}
                   >{prompt}</button>
                 ))}
               </div>
@@ -2285,7 +2306,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                   style={{ minHeight:'24px', maxHeight:'120px', color: 'var(--text-primary)' }}
                 />
               </div>
-              <button type="submit" disabled={!input.trim() || isTyping} className="w-11 h-11 flex items-center justify-center disabled:opacity-40 font-semibold rounded-full shadow-sm active:scale-95 transition-all flex-shrink-0" style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)' }} aria-label="Send">➤</button>
+              <button type="submit" disabled={!input.trim() || isTyping} className="w-11 h-11 md:w-11 md:h-11 flex items-center justify-center disabled:opacity-40 font-semibold rounded-full shadow-sm active:scale-95 transition-all flex-shrink-0 hover:shadow-lg" style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)', ...(input.trim() && !isTyping ? { animation: 'glowPulse 2s ease-in-out infinite' } : {}) }} aria-label="Send">➤</button>
             </form>
           </div>
         )}
