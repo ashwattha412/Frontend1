@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import './Dashboard-theme.css';
 import RecentChats from './Recentchats';
@@ -36,24 +36,12 @@ const REACTION_OPTIONS = [
   { emoji: "😊", label: "Made me smile" },
 ];
 
-const SESSION_STORAGE_KEY = (userId) => `aura_active_session_${userId}`;
-const SESSION_ACTIVITY_KEY = (userId) => `aura_session_activity_${userId}`;
-
-// localStorage key that records which instance currently "owns" this user's session.
-// Used for cross-tab detection within the same browser.
-const ACTIVE_INSTANCE_KEY = (userId) => `aura_active_instance_${userId}`;
-
-// sessionStorage key for the instanceId of this tab.
-// sessionStorage survives page RELOAD but is NOT shared across tabs,
-// which is exactly what we need: reload = same instance, new tab = new instance.
-const INSTANCE_ID_SESSION_KEY = (userId) => `aura_instance_${userId}`;
-
-// Heartbeat interval. Must be well under HEARTBEAT_STALE_SECONDS (45s backend).
+const SESSION_STORAGE_KEY = (userId) => `dori_active_session_${userId}`;
+const SESSION_ACTIVITY_KEY = (userId) => `dori_session_activity_${userId}`;
+const ACTIVE_INSTANCE_KEY = (userId) => `dori_active_instance_${userId}`;
+const INSTANCE_ID_SESSION_KEY = (userId) => `dori_instance_${userId}`;
 const HEARTBEAT_INTERVAL_MS = 20_000;
 
-// Get or create a stable instanceId for this tab.
-// Reloading the same tab returns the SAME id → no false conflict on reload.
-// Opening a new tab returns a NEW id → correct conflict detection.
 function getOrCreateInstanceId(userId) {
   const key = INSTANCE_ID_SESSION_KEY(userId);
   let id = sessionStorage.getItem(key);
@@ -78,10 +66,10 @@ function loadSessionActivity(userId) {
 function saveSessionActivity(userId, map) {
   try {
     localStorage.setItem(SESSION_ACTIVITY_KEY(userId), JSON.stringify(map));
-  } catch (e) { /* ignore */ }
+  } catch {}
 }
 
-
+const DEFAULT_TITLES = ['', 'New Chat', 'Wellness Chat Session'];
 
 const GREETING_RE = /^(hi+|hello+|hey+|yo+|sup|howdy|hola)[.!?\s]*$/i;
 const STOPWORDS = new Set([
@@ -207,7 +195,7 @@ const RabbitSVG = ({ phase, size = 144 }) => (
 );
 
 const BuddyAvatar = ({ size = 36 }) => (
-  <div className="flex-shrink-0 flex items-end justify-center select-none" style={{ width: size, height: size }} title="AURA" aria-label="AURA">
+  <div className="flex-shrink-0 flex items-end justify-center select-none" style={{ width: size, height: size }} title="Dori" aria-label="Dori">
     <RabbitSVG phase="Exhale" size={size} />
   </div>
 );
@@ -246,7 +234,7 @@ const FloatingDecor = ({ darkMode = false }) => {
   ];
   const items = darkMode ? darkItems : lightItems;
   return (
-    <div className="aura-floating-decor absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
+    <div className="dori-floating-decor absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
       {items.map((it, i) => (
         <span key={i} className="absolute bottom-0" style={{ left: it.left, fontSize: it.size, opacity: 0, animation: `floatDrift ${it.duration}s ease-in-out ${it.delay}s infinite` }}>{it.glyph}</span>
       ))}
@@ -293,26 +281,20 @@ function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed w-36 rounded-xl shadow-lg z-[100] overflow-hidden"
-      style={{ top, left, background: 'var(--bg-menu)', border: '1px solid var(--menu-border)' }}
+      className="fixed w-36 bg-white rounded-xl shadow-lg z-[100] overflow-hidden border border-[#EEF2EC]"
+      style={{ top, left }}
       onClick={e => e.stopPropagation()}
     >
       <button
         onClick={() => { onRename(); onClose(); }}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium transition-all text-left"
-        style={{ color: 'var(--menu-text)' }}
-        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
-        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-[#5F554D] hover:bg-[#EEF2EC] transition-colors text-left"
       >
         <span>✏️</span> Rename
       </button>
-      <div style={{ borderTop: '1px solid var(--menu-border)' }} />
+      <div className="border-t border-[#EEF2EC]" />
       <button
         onClick={() => { onDelete(); onClose(); }}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium transition-all text-left"
-        style={{ color: 'var(--menu-danger)' }}
-        onMouseEnter={e => e.currentTarget.style.background = 'var(--menu-danger-bg)'}
-        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors text-left"
       >
         <span>🗑️</span> Delete
       </button>
@@ -321,11 +303,6 @@ function SessionMenu({ anchorRect, onRename, onDelete, onClose }) {
   );
 }
 
-// `dusty` locks the rings to the original sepia look regardless of theme —
-// used by the Past Entries panel and past-entry detail modal, since those
-// pages are meant to read as aged paper in both light AND dark mode.
-// Leave `dusty` off (default) for the live notebook page, which DOES
-// theme-shift — parchment in light, glowing blue in dark.
 function SpiralRings({ count = 13, dusty = false }) {
   const dustyVars = {
     stripFrom: '#E2DDD7',
@@ -539,13 +516,8 @@ function JournalView({ user, sessionId }) {
   const [loading,    setLoading]    = useState(true);
   const textRef = useRef(null);
 
-  // ── Clear-entry confirmation (today/selected editor) ───────────────────────
-  // Two-step confirm only when something is actually persisted server-side;
-  // clearing an unsaved draft just wipes the textarea immediately.
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearConfirmTimeoutRef = useRef(null);
-
-  // ── Mobile calendar toggle ──────────────────────────────────────────────────
   const [showMobileCalendar, setShowMobileCalendar] = useState(false);
 
   const [viewingEntry, setViewingEntry] = useState(null);
@@ -557,7 +529,6 @@ function JournalView({ user, sessionId }) {
   const [pastSaveError,   setPastSaveError]   = useState('');
   const pastEditRef = useRef(null);
 
-  // ── Clear-entry confirmation (past-entry edit modal) ───────────────────────
   const [pastClearConfirm, setPastClearConfirm] = useState(false);
   const pastClearConfirmTimeoutRef = useRef(null);
 
@@ -619,7 +590,6 @@ function JournalView({ user, sessionId }) {
   }, [user?.id]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(entries[selected]?.text ?? '');
     setSaveError('');
     setClearConfirm(false);
@@ -627,7 +597,6 @@ function JournalView({ user, sessionId }) {
     setTimeout(() => textRef.current?.focus(), 80);
   }, [selected, entries]);
 
-  // Clean up any pending confirm timeouts on unmount.
   useEffect(() => {
     return () => {
       clearTimeout(clearConfirmTimeoutRef.current);
@@ -635,26 +604,18 @@ function JournalView({ user, sessionId }) {
     };
   }, []);
 
-  // ── FIXED: saveEntryForDate ─────────────────────────────────────────────────
-  // POST for new entries no longer sends session_id when null (avoids FK errors).
-  // Response handling tries resData.data first, then resData directly, so it
-  // works regardless of whether the backend wraps the record or returns it bare.
   const saveEntryForDate = async (date, text) => {
     if (!text.trim()) return { ok: false, error: 'Nothing to save yet.' };
     const existing = entries[date];
     try {
       let response;
       if (existing?.id) {
-        // ── UPDATE existing entry ─────────────────────────────────────────────
         response = await fetch(`${BACKEND_URL}/journals/${existing.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ user_id: user?.id, content: text })
         });
       } else {
-        // ── CREATE new entry ──────────────────────────────────────────────────
-        // Only attach session_id when we have a real one — passing null can
-        // trigger a FK constraint violation on some backends.
         const payload = {
           user_id:    user?.id,
           entry_date: date,
@@ -672,7 +633,6 @@ function JournalView({ user, sessionId }) {
       const resData = await response.json().catch(() => ({}));
 
       if (response.ok) {
-        // Support both { data: { id } } and bare { id } response shapes
         const savedItem = resData.data ?? resData;
         const savedId   = savedItem?.id ?? savedItem?.journal_id ?? existing?.id;
         setEntries(prev => ({ ...prev, [date]: { id: savedId, text } }));
@@ -691,15 +651,8 @@ function JournalView({ user, sessionId }) {
     }
   };
 
-  // ── NEW: deleteEntryById ────────────────────────────────────────────────────
-  // Shared helper for clearing a persisted entry from the backend. Returns
-  // { ok, error } the same shape as saveEntryForDate so callers can handle
-  // both consistently.
   const deleteEntryById = async (id) => {
     try {
-      // Backend's DELETE route checks entry ownership, so user_id is required
-      // as a query param here (it's a plain scalar param on the FastAPI side,
-      // not a body model).
       const response = await fetch(`${BACKEND_URL}/journals/${id}?user_id=${user?.id}`, { method: "DELETE" });
       if (response.ok) return { ok: true, error: '' };
       const resData = await response.json().catch(() => ({}));
@@ -729,11 +682,6 @@ function JournalView({ user, sessionId }) {
     setSaving(false);
   };
 
-  // ── NEW: handleClearEntry ───────────────────────────────────────────────────
-  // Wipes the current page completely. If nothing has been saved yet, this
-  // just clears the textarea. If a saved entry exists, the first click arms
-  // a short confirmation window (auto-disarms after 3s) and the second click
-  // deletes it from the backend and removes it from local state too.
   const handleClearEntry = async () => {
     const existing = entries[selected];
 
@@ -759,7 +707,7 @@ function JournalView({ user, sessionId }) {
     const { ok, error } = await deleteEntryById(existing.id);
     if (ok) {
       setEntries(prev => {
-        const { [selected]: _, ...rest } = prev;
+        const { [selected]: _removed, ...rest } = prev;
         return rest;
       });
       setDraft('');
@@ -785,11 +733,6 @@ function JournalView({ user, sessionId }) {
     setPastSaving(false);
   };
 
-  // ── NEW: handleClearPastEntry ───────────────────────────────────────────────
-  // Same two-step confirm pattern as handleClearEntry, but for a past page
-  // opened from the "Past Entries" panel. Past entries are always persisted
-  // (they only ever appear here once saved), so this always confirms first.
-  // Once cleared there's nothing left to show, so the modal closes itself.
   const handleClearPastEntry = async () => {
     if (!viewingEntry) return;
     const existing = entries[viewingEntry.date];
@@ -870,9 +813,6 @@ function JournalView({ user, sessionId }) {
     }
   `;
 
-  // "Old pages" stay sepia/dusty in BOTH themes on purpose — it's meant to
-  // read as aged paper, and that identity would be lost if it followed
-  // dark mode too. Only the live calendar/notebook chrome below re-themes.
   const dustyPaperBg = `
     radial-gradient(circle at 12% 18%, rgba(120,98,66,0.08), transparent 9%),
     radial-gradient(circle at 82% 24%, rgba(120,98,66,0.07), transparent 11%),
@@ -885,13 +825,11 @@ function JournalView({ user, sessionId }) {
   const dustyRuleLines = 'repeating-linear-gradient(transparent, transparent 31px, #E2D6B8 31px, #E2D6B8 32px)';
   const dustyMargin = 'rgba(176,92,78,0.28)';
 
-  // ── Shared calendar grid JSX (used by both desktop sidebar and mobile panel) ─
-  const renderCalendarGrid = ({ onSelectDate } = {}) => (
+  const CalendarGrid = ({ onSelectDate }) => (
     <div
       className="rounded-2xl overflow-hidden transition-colors duration-300"
       style={{ background: 'var(--bg-recent-item)', boxShadow: '0 2px 12px rgba(95,85,77,0.08)', border: '1px solid var(--journal-border)' }}
     >
-      {/* Calendar top — purple in dark mode (var(--bg-sidebar)) */}
       <div className="flex items-center justify-between px-2.5 py-2 transition-colors duration-300" style={{ background: 'var(--bg-sidebar)' }}>
         <button onClick={prevMonth} className="w-5 h-5 flex items-center justify-center rounded-full hover:opacity-70 transition-all text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>‹</button>
         <div className="text-center leading-tight">
@@ -946,15 +884,13 @@ function JournalView({ user, sessionId }) {
 
   return (
     <div className="flex-1 flex overflow-hidden transition-colors duration-300" style={{ background: 'var(--bg-app)' }}>
-      {/* ── Desktop calendar sidebar ─────────────────────────────────────────── */}
       <div
         className="hidden md:flex flex-col flex-shrink-0 p-3 border-r transition-colors duration-300"
         style={{ width: 210, borderColor: 'var(--journal-border)' }}
       >
-        {renderCalendarGrid()}
+        <CalendarGrid />
       </div>
 
-      {/* ── Main notebook area ───────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 p-4 overflow-hidden">
         <div
           className="flex-1 flex flex-col overflow-hidden rounded-2xl transition-colors duration-300"
@@ -966,7 +902,6 @@ function JournalView({ user, sessionId }) {
         >
           <SpiralRings count={13} />
 
-          {/* ── Notebook header ─────────────────────────────────────────────── */}
           <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b transition-colors duration-300" style={{ borderColor: 'var(--journal-border)' }}>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5 opacity-70" style={{ color: 'var(--text-secondary)' }}>
@@ -978,7 +913,6 @@ function JournalView({ user, sessionId }) {
             <div className="flex items-center gap-2">
               {loading && <span className="text-[10px] animate-pulse" style={{ color: 'var(--text-secondary)' }}>Loading…</span>}
 
-              {/* Mobile calendar toggle — hidden on md+ where sidebar is visible */}
               <button
                 onClick={() => setShowMobileCalendar(v => !v)}
                 className="md:hidden flex items-center gap-1 px-3 py-1.5 rounded-full hover:opacity-80 text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95"
@@ -1034,14 +968,12 @@ function JournalView({ user, sessionId }) {
             </div>
           </div>
 
-          {/* ── Mobile calendar panel (collapsible) ─────────────────────────── */}
           {showMobileCalendar && (
             <div className="md:hidden flex-shrink-0 px-4 pt-3 pb-3 border-b transition-colors duration-300" style={{ borderColor: 'var(--journal-border)', background: 'var(--bg-recent-item)' }}>
-              {renderCalendarGrid({ onSelectDate: () => setShowMobileCalendar(false) })}
+              <CalendarGrid onSelectDate={() => setShowMobileCalendar(false)} />
             </div>
           )}
 
-          {/* ── Lined writing area ───────────────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto relative">
             <div className="absolute top-0 bottom-0 pointer-events-none" style={{ left: 64, width: 1, background: 'rgba(255,150,150,0.28)' }} />
             <div className="absolute inset-0 pointer-events-none opacity-90" style={{ backgroundImage: 'repeating-linear-gradient(transparent, transparent 31px, var(--journal-border) 31px, var(--journal-border) 32px)', backgroundPosition: '0 8px' }} />
@@ -1067,7 +999,6 @@ function JournalView({ user, sessionId }) {
         </div>
       </div>
 
-      {/* ── Past entries panel — intentionally stays dusty/sepia in both themes ── */}
       {showPastPanel && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6"
@@ -1087,7 +1018,7 @@ function JournalView({ user, sessionId }) {
             }}
             onClick={e => e.stopPropagation()}
           >
-            <SpiralRings count={13} dusty />
+            <SpiralRings count={13} dusty/>
 
             <div className="flex-shrink-0 flex items-center justify-between px-7 py-4 border-b border-[rgba(120,98,66,0.15)]">
               <div>
@@ -1158,7 +1089,6 @@ function JournalView({ user, sessionId }) {
         </div>
       )}
 
-      {/* ── View past entry modal — also stays dusty/sepia in both themes ────── */}
       {viewingEntry && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-6"
@@ -1178,7 +1108,7 @@ function JournalView({ user, sessionId }) {
             }}
             onClick={e => e.stopPropagation()}
           >
-            <SpiralRings count={11} dusty />
+            <SpiralRings count={11} dusty/>
 
             <div className="flex-shrink-0 flex items-start justify-between px-7 py-4">
               <div>
@@ -1268,11 +1198,11 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth,setSidebarWidth]= useState(280);
 
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('aura_theme') === 'dark');
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('dori_theme') === 'dark');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
-    localStorage.setItem('aura_theme', darkMode ? 'dark' : 'light');
+    localStorage.setItem('dori_theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
   const toggleDarkMode = () => setDarkMode(d => !d);
@@ -1316,10 +1246,19 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
   const justCreatedSessionRef = useRef(false);
   const sessionsRef = useRef([]);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  const messagesRef = useRef([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
   const manualRenameRef = useRef(new Set());
   const sessionConvoRef = useRef({});
   const sessionActivityRef = useRef({});
   const hasRestoredSessionRef = useRef(false);
+
+  const replyQueueRef = useRef(Promise.resolve());
+  const enqueueReply = useCallback((task) => {
+    replyQueueRef.current = replyQueueRef.current.then(task).catch(err => {
+      console.error("Reply queue error:", err);
+    });
+  }, []);
 
   const [hoveredSession,  setHoveredSession]  = useState(null);
   const [openMenuSession, setOpenMenuSession] = useState(null);
@@ -1337,18 +1276,11 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const profileRef = useRef(null);
 
-  // ─── Single-session enforcement ──────────────────────────────────────────
-  // instanceIdRef uses getOrCreateInstanceId which reads from sessionStorage.
-  // sessionStorage survives page reload but is NOT shared between tabs, so:
-  //   • Reload → same instanceId → localStorage entry matches → NO conflict ✓
-  //   • New tab → new instanceId → localStorage entry differs → conflict shown ✓
-  //   • New device → different browser entirely → backend heartbeat catches it ✓
   const instanceIdRef       = useRef(user?.id ? getOrCreateInstanceId(user.id) : null);
   const heartbeatTimerRef   = useRef(null);
   const broadcastChannelRef = useRef(null);
   const [sessionConflict,  setSessionConflict]  = useState(false);
   const [sessionDisplaced, setSessionDisplaced] = useState(false);
-  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (e) => { if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false); };
@@ -1363,6 +1295,15 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
   const [breathActive, setBreathActive] = useState(false);
   const [cycleCount,   setCycleCount]   = useState(0);
 
+  // ── Phase durations: Inhale 4s, Hold 2s, Exhale 6s ──────────────────────
+  const phaseDurations = { Inhale: 4, Hold: 2, Exhale: 6 };
+
+  const phaseColors = {
+    Inhale: { bg: 'var(--phase-inhale-bg)', text: 'var(--text-primary)', label: 'Breathe in slowly...' },
+    Hold:   { bg: 'var(--phase-hold-bg)',   text: 'var(--text-primary)', label: 'Hold and be still...' },
+    Exhale: { bg: 'var(--phase-exhale-bg)', text: 'var(--text-primary)', label: 'Let it all go...' },
+  };
+
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages, isTyping]);
 
   useEffect(() => {
@@ -1372,37 +1313,14 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
-  // ─── Cross-device + same-browser single-session enforcement ──────────────
-  //
-  // Two layers:
-  //   Layer 1 (same browser, instant): BroadcastChannel + localStorage.
-  //     Identical to the original code — lets tabs react in < 1 s.
-  //   Layer 2 (cross-device, polling): backend /active-session + /heartbeat.
-  //     On mount → check for an existing live session (excluding our own log_id).
-  //     Every 20 s → POST /heartbeat. If it returns active:false, displace.
-  //
-  // Both layers share the same sessionConflict / sessionDisplaced state and
-  // the same handleContinueHere / handleStayInOther handlers.
-  // ─────────────────────────────────────────────────────────────────────────
-
-  // ─── Layer 1: same-browser tab enforcement via BroadcastChannel + localStorage ───
-  // instanceId lives in sessionStorage: survives reload, isolated per tab.
-  // KEY FIX: We do NOT remove the localStorage entry on useEffect cleanup.
-  // React StrictMode double-invokes effects (mount→cleanup→mount), so removing
-  // it in cleanup would wipe the entry and kill detection for new tabs.
-  // We only remove it on intentional logout or takeover (handleLogout / handleStayInOther).
   useEffect(() => {
     if (!user?.id) return;
 
     const STORAGE_KEY  = ACTIVE_INSTANCE_KEY(user.id);
-    const CHANNEL_NAME = `aura_session_${user.id}`;
+    const CHANNEL_NAME = `dori_session_${user.id}`;
     const myId = getOrCreateInstanceId(user.id);
     instanceIdRef.current = myId;
 
-    // Check if another tab on this browser already owns the session.
-    // isDifferentTab: stored id exists and is not ours (not a reload).
-    // isFresh: written recently enough that the other tab is still alive.
-    // We use 60s here (generous) since the LS refresh is every 10s.
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -1411,14 +1329,11 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         const isDifferentTab = stored.instanceId && stored.instanceId !== myId;
         const isFresh = age < 60_000;
         if (isDifferentTab && isFresh) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
           setSessionConflict(true);
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch (_) {}
 
-    // Write our record immediately, then refresh every 10s.
-    // Short interval ensures the entry stays fresh even if the tab is idle.
     const writeLS = (extra = {}) => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -1426,16 +1341,14 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
           timestamp:  Date.now(),
           ...extra,
         }));
-      } catch (e) { /* ignore */ }
+      } catch (_) {}
     };
     writeLS();
     const lsTimer = setInterval(writeLS, 10_000);
 
-    // Also refresh when the tab becomes visible (handles long-idle tabs)
     const handleVisibility = () => { if (document.visibilityState === 'visible') writeLS(); };
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // BroadcastChannel for instant cross-tab messaging (same browser only)
     let channel = null;
     if (typeof BroadcastChannel !== 'undefined') {
       channel = new BroadcastChannel(CHANNEL_NAME);
@@ -1447,7 +1360,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         if (type === 'TAKE_OVER') {
           clearInterval(lsTimer);
           document.removeEventListener('visibilitychange', handleVisibility);
-          try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+          try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
           channel.close();
           setSessionDisplaced(true);
         }
@@ -1457,7 +1370,6 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
       };
     }
 
-    // Storage event: fallback for TAKE_OVER if BroadcastChannel message was missed
     const handleStorage = (e) => {
       if (e.key !== STORAGE_KEY) return;
       try {
@@ -1469,13 +1381,10 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
           broadcastChannelRef.current?.close();
           setSessionDisplaced(true);
         }
-      } catch (e) { /* ignore */ }
+      } catch (_) {}
     };
     window.addEventListener('storage', handleStorage);
 
-    // Cleanup: stop timers and listeners, but DO NOT remove the localStorage
-    // entry here — React StrictMode would wipe it during its mount→cleanup→mount
-    // cycle. The entry is removed only on intentional logout or takeover.
     return () => {
       clearInterval(lsTimer);
       window.removeEventListener('storage', handleStorage);
@@ -1484,14 +1393,6 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
     };
   }, [user?.id]);
 
-  // ─── Layer 2: cross-device + incognito enforcement via backend ─────────────
-  // This is the ONLY layer that works between normal and incognito tabs,
-  // or between different browsers/devices. Layer 1 (localStorage) is blind there.
-  //
-  // We check /active-session twice: immediately on mount, then again after 3s.
-  // The 3s retry handles the race where Tab A's heartbeat just refreshed and
-  // the Supabase replica hasn't propagated yet, or where our own heartbeat
-  // hasn't completed yet and created a false stale read.
   useEffect(() => {
     if (!user?.id || !user?.logId) return;
 
@@ -1504,17 +1405,17 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
           `${BACKEND_URL}/auth/active-session/${user.id}?exclude_log_id=${logId}`
         );
         if (!res.ok) {
-          console.warn('[AURA session] /active-session returned', res.status);
+          console.warn('[Dori session] /active-session returned', res.status);
           return false;
         }
         const data = await res.json();
-        console.log('[AURA session] active-elsewhere:', data.active_elsewhere, data.other ?? '', data.error ?? '');
+        console.log('[Dori session] active-elsewhere:', data.active_elsewhere, data.other ?? '', data.error ?? '');
         if (data.error) {
-          console.warn('[AURA session] Backend error hint:', data.error);
+          console.warn('[Dori session] Backend error hint:', data.error);
         }
         return data.active_elsewhere === true;
       } catch (err) {
-        console.warn('[AURA session] /active-session error:', err.message);
+        console.warn('[Dori session] /active-session error:', err.message);
         return false;
       }
     };
@@ -1524,21 +1425,18 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         const res = await fetch(`${BACKEND_URL}/auth/heartbeat/${logId}`, { method: 'POST' });
         if (!res.ok) return;
         const data = await res.json();
-        if (data.warning) console.warn('[AURA session] Heartbeat warning:', data.warning);
+        if (data.warning) console.warn('[Dori session] Heartbeat warning:', data.warning);
         if (!data.active && !cancelled) {
           clearInterval(heartbeatTimerRef.current);
           setSessionDisplaced(true);
         }
-      } catch (e) { /* ignore */ }
+      } catch (_) {}
     };
 
-    // Run heartbeat first so our last_seen_at is written to DB immediately,
-    // then check for conflicts (so we don't accidentally see our own session as "other")
     const init = async () => {
       await runHeartbeat();
       if (cancelled) return;
 
-      // First check
       const foundConflict = await checkActiveElsewhere();
       if (cancelled) return;
 
@@ -1547,8 +1445,6 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         return;
       }
 
-      // Retry after 3s — catches cases where the other tab's last_seen_at
-      // was written but the DB query ran fractionally before it propagated
       await new Promise(r => setTimeout(r, 3000));
       if (cancelled) return;
 
@@ -1567,27 +1463,57 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
     };
   }, [user?.id, user?.logId]);
 
+  // ── BREATHING TIMER — the core fix is here ───────────────────────────────
+  // `lc = phaseDurations[lp]` runs AFTER lp is updated to the next phase,
+  // so Hold gets 2 and Exhale gets 6 instead of always resetting to 4.
   useEffect(() => {
     if (view !== 'breathing' || !breathActive) return;
-    let lp = 'Inhale', lc = 4;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setBreathPhase('Inhale'); setCounter(4); setBreathScale(1.35);
+
+    let lp = 'Inhale';
+    let lc = phaseDurations['Inhale']; // start with 4
+
+    setBreathPhase('Inhale');
+    setCounter(phaseDurations['Inhale']); // 4
+    setBreathScale(1.35);
+
     const iv = setInterval(() => {
       lc -= 1;
       if (lc <= 0) {
-        if (lp === 'Inhale')    { lp = 'Hold';   setBreathPhase('Hold'); }
-        else if (lp === 'Hold') { lp = 'Exhale'; setBreathPhase('Exhale'); setBreathScale(1.0); }
-        else                    { lp = 'Inhale'; setBreathPhase('Inhale'); setBreathScale(1.35); setCycleCount(p=>p+1); }
-        lc = 4;
+        // Advance to next phase
+        if (lp === 'Inhale') {
+          lp = 'Hold';
+          setBreathPhase('Hold');
+          // scale stays expanded during hold
+        } else if (lp === 'Hold') {
+          lp = 'Exhale';
+          setBreathPhase('Exhale');
+          setBreathScale(1.0);
+        } else {
+          lp = 'Inhale';
+          setBreathPhase('Inhale');
+          setBreathScale(1.35);
+          setCycleCount(p => p + 1);
+        }
+        // ★ KEY FIX: read duration AFTER lp has been updated to the new phase
+        lc = phaseDurations[lp];
       }
       setCounter(lc);
     }, 1000);
+
     return () => clearInterval(iv);
+  // phaseDurations is a plain object literal defined above — safe to omit from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, breathActive]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (view !== 'breathing') { setBreathActive(false); setBreathPhase('Inhale'); setBreathScale(1.0); setCounter(4); setCycleCount(0); }
+    if (view !== 'breathing') {
+      setBreathActive(false);
+      setBreathPhase('Inhale');
+      setBreathScale(1.0);
+      setCounter(phaseDurations['Inhale']);
+      setCycleCount(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
   useEffect(() => {
@@ -1646,8 +1572,8 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         const data = await res.json();
         if (res.ok && data.messages) {
           const formatted = data.messages
-            .filter(m => m.content && !m.content.startsWith('[HIDDEN]'))
-            .map(m => ({ id: m.id, text: m.content, isBot: m.sender === 'bot', reaction: null }));
+            .filter(m => m.content)
+            .map(m => ({ id: m.id, text: m.content, isBot: m.sender === 'bot', reaction: m.reaction ?? null }));
           setMessages(formatted);
           sessionConvoRef.current[activeSessionId] = formatted.map(m => ({
             sender: m.isBot ? 'bot' : 'user',
@@ -1690,7 +1616,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
     });
   }, [user.id]);
 
-  const sendChatMessage = useCallback(async (messageText, isHidden = false) => {
+  const sendChatMessage = useCallback(async (messageText) => {
     if (!messageText.trim()) return;
     let currentSessionId = activeSessionId;
     if (!currentSessionId) {
@@ -1715,38 +1641,41 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
     }
 
     if (!sessionConvoRef.current[currentSessionId]) sessionConvoRef.current[currentSessionId] = [];
-    if (!isHidden) sessionConvoRef.current[currentSessionId].push({ sender: 'user', content: messageText });
+    sessionConvoRef.current[currentSessionId].push({ sender: 'user', content: messageText });
 
     const userMsgId = Date.now();
-    if (!isHidden) setMessages(prev => [...prev, { id: userMsgId, text: messageText, isBot: false, reaction: null }]);
-    setIsTyping(true);
-    try {
-      const response = await fetch(`${BACKEND_URL}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: currentSessionId, user_id: user.id, content: messageText })
-      });
-      const data = await response.json();
-      if (response.ok && data.reply?.response) {
-        setMessages(prev => [...prev, { id: Date.now() + 1, text: data.reply.response, isBot: true, reaction: null }]);
+    setMessages(prev => [...prev, { id: userMsgId, text: messageText, isBot: false, reaction: null }]);
 
-        sessionConvoRef.current[currentSessionId].push({ sender: 'bot', content: data.reply.response });
-        const convo = sessionConvoRef.current[currentSessionId];
-        if (convo.length === 2 || convo.length === 6) {
-          const newTitle = deriveChatTitle(convo);
-          commitAutoTitle(currentSessionId, newTitle, sessionsRef, setSessions, manualRenameRef);
+    enqueueReply(async () => {
+      setIsTyping(true);
+      try {
+        const response = await fetch(`${BACKEND_URL}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: currentSessionId, user_id: user.id, content: messageText })
+        });
+        const data = await response.json();
+        if (response.ok && data.reply?.response) {
+          setMessages(prev => [...prev, { id: Date.now() + 1, text: data.reply.response, isBot: true, reaction: null }]);
+
+          sessionConvoRef.current[currentSessionId].push({ sender: 'bot', content: data.reply.response });
+          const convo = sessionConvoRef.current[currentSessionId];
+          if (convo.length === 2 || convo.length === 6) {
+            const newTitle = deriveChatTitle(convo);
+            commitAutoTitle(currentSessionId, newTitle, sessionsRef, setSessions, manualRenameRef);
+          }
+        } else {
+          throw new Error(typeof data.detail === 'string' ? data.detail : 'Chat failure');
         }
-      } else {
-        throw new Error(typeof data.detail === 'string' ? data.detail : 'Chat failure');
+      } catch (err) {
+        console.error("Chat error:", err);
+        setMessages(prev => prev.filter(m => m.id !== userMsgId));
+        setMessages(prev => [...prev, { id: Date.now() + 1, text: "I'm here with you, even when the connection feels shaky. What's on your mind?", isBot: true, reaction: null }]);
+      } finally {
+        setIsTyping(false);
       }
-    } catch (err) {
-      console.error("Chat error:", err);
-      setMessages(prev => prev.filter(m => m.id !== userMsgId));
-      setMessages(prev => [...prev, { id: Date.now() + 1, text: "I'm here with you, even when the connection feels shaky. What's on your mind?", isBot: true, reaction: null }]);
-    } finally {
-      setIsTyping(false);
-    }
-  }, [activeSessionId, user.id, touchSessionActivity]);
+    });
+  }, [activeSessionId, user.id, touchSessionActivity, enqueueReply]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -1756,27 +1685,55 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
     await sendChatMessage(text);
   };
 
-  const handleReaction = (msgId, emoji) => {
-    const msg = messages.find(m => m.id === msgId);
-    if (!msg) return;
-    // If already reacted (locked), ignore all further clicks
-    if (msg.reaction !== null) return;
-    
+  const handleReaction = useCallback((msgId, emoji, label) => {
+    const target = messagesRef.current.find(m => m.id === msgId);
+    if (!target) return;
+
+    if (target.reaction) return;
+
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, reaction: emoji } : m));
-    
-    const option = REACTION_OPTIONS.find(o => o.emoji === emoji);
-    if (option) {
-      const text = option.emoji === "😊" 
-        ? `[HIDDEN] *[User reacted to your message: made me smile ${option.emoji}]*` 
-        : `[HIDDEN] *[User reacted to your message: ${option.label.toLowerCase()} ${option.emoji}]*`;
-      sendChatMessage(text, true);
-    }
-  };
+    messagesRef.current = messagesRef.current.map(m => m.id === msgId ? { ...m, reaction: emoji } : m);
+
+    fetch(`${BACKEND_URL}/messages/${msgId}/reaction`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reaction: emoji })
+    }).catch(err => console.error("Reaction persist error:", err));
+
+    enqueueReply(async () => {
+      setIsTyping(true);
+      try {
+        const res = await fetch(`${BACKEND_URL}/chat/react`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: activeSessionId,
+            user_id: user.id,
+            message_id: msgId,
+            message_content: target.text,
+            emoji,
+            label,
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.reply) {
+          setMessages(prev => [...prev, { id: Date.now() + 2, text: data.reply, isBot: true, reaction: null }]);
+          if (sessionConvoRef.current[activeSessionId]) {
+            sessionConvoRef.current[activeSessionId].push({ sender: 'bot', content: data.reply });
+          }
+        }
+      } catch (err) {
+        console.error("Reaction reply error:", err);
+      } finally {
+        setIsTyping(false);
+      }
+    });
+  }, [activeSessionId, user.id, enqueueReply]);
 
   const handleDeleteSession = async (sessId) => {
     try {
       await fetch(`${BACKEND_URL}/sessions/${sessId}`, { method: "DELETE" });
-    } catch (e) { /* ignore */ }
+    } catch (_) {}
     setSessions(prev => prev.filter(s => s.id !== sessId));
     if (sessionActivityRef.current[sessId] !== undefined) {
       const { [sessId]: _removed, ...rest } = sessionActivityRef.current;
@@ -1817,16 +1774,13 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
 
   const handleLogout = async () => {
     if (user?.logId) {
-      try { await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: "POST" }); } catch (e) { /* ignore */ }
+      try { await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: "POST" }); } catch (_) {}
     }
     if (user?.id) {
-      // Clear chat session tracker
       sessionStorage.removeItem(SESSION_STORAGE_KEY(user.id));
-      // Clear the instanceId so the next login on this tab starts fresh
       sessionStorage.removeItem(INSTANCE_ID_SESSION_KEY(user.id));
     }
 
-    // Remove our localStorage active-instance entry
     try {
       const STORAGE_KEY = ACTIVE_INSTANCE_KEY(user.id);
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -1834,18 +1788,14 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         const stored = JSON.parse(raw);
         if (stored.instanceId === instanceIdRef.current) localStorage.removeItem(STORAGE_KEY);
       }
-    } catch (e) { /* ignore */ }
+    } catch (_) {}
 
     clearInterval(heartbeatTimerRef.current);
     broadcastChannelRef.current?.close();
     onLogout();
   };
 
-  // ─── Session conflict / takeover handlers ────────────────────────────────
-
-  // User clicks "Yes, use AURA here" — take over all other sessions
   const handleContinueHere = useCallback(async () => {
-    // Layer 1: broadcast to same-browser tabs
     const STORAGE_KEY = ACTIVE_INSTANCE_KEY(user.id);
     const myId        = instanceIdRef.current;
     broadcastChannelRef.current?.postMessage({ type: 'TAKE_OVER', instanceId: myId });
@@ -1855,19 +1805,17 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         timestamp:  Date.now(),
         takenOver:  true,
       }));
-    } catch (e) { /* ignore */ }
+    } catch (_) {}
 
-    // Layer 2: tell backend to end all other sessions for this user
     if (user?.logId) {
       try {
         await fetch(`${BACKEND_URL}/auth/takeover/${user.logId}`, { method: 'POST' });
-      } catch (e) { /* ignore */ }
+      } catch (_) {}
     }
 
     setSessionConflict(false);
   }, [user.id, user?.logId]);
 
-  // User clicks "Keep using the other window" — log out of this tab
   const handleStayInOther = useCallback(async () => {
     const STORAGE_KEY = ACTIVE_INSTANCE_KEY(user.id);
     const myId        = instanceIdRef.current;
@@ -1878,30 +1826,21 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         const stored = JSON.parse(raw);
         if (stored.instanceId === myId) localStorage.removeItem(STORAGE_KEY);
       }
-    } catch (e) { /* ignore */ }
+    } catch (_) {}
 
     clearInterval(heartbeatTimerRef.current);
     broadcastChannelRef.current?.close();
 
-    // Also end our backend session so it doesn't ghost as "active elsewhere"
     if (user?.logId) {
       try {
         await fetch(`${BACKEND_URL}/auth/signout/${user.logId}`, { method: 'POST' });
-      } catch (e) { /* ignore */ }
+      } catch (_) {}
     }
 
     onLogout();
   }, [user.id, user?.logId, onLogout]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const phaseColors = {
-    Inhale: { bg: 'var(--phase-inhale-bg)', text: 'var(--text-primary)', label: 'Breathe in slowly...' },
-    Hold:   { bg: 'var(--phase-hold-bg)',   text: 'var(--text-primary)', label: 'Hold and be still...' },
-    Exhale: { bg: 'var(--phase-exhale-bg)', text: 'var(--text-primary)', label: 'Let it all go...' },
-  };
-
-  const renderNavItem = ({ id, icon, label }) => (
+  const NavItem = ({ id, icon, label }) => (
     <button
       onClick={() => { setView(id); if (window.innerWidth < 768) setSidebarOpen(false); }}
       className={`w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 ${view === id ? "shadow-sm" : "hover:bg-[var(--bg-recent-item)] active:scale-[0.98]"}`}
@@ -1932,37 +1871,32 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
             <div className="flex-shrink-0 px-5 pt-5 space-y-5">
               <div className="flex flex-col items-center gap-1.5 px-1 pt-3 pb-2">
                 <div
-                  className="flex items-end justify-center rounded-2xl shadow-sm transition-all duration-300"
-                  style={{ width: 88, height: 88, padding: 4, background: 'var(--bg-card-glass)' }}
+                  className="flex items-end justify-center rounded-2xl bg-white/60 shadow-sm"
+                  style={{ width: 88, height: 88, padding: 4 }}
                 >
                   <RabbitSVG phase="Exhale" size={80} />
                 </div>
                 <div className="text-center leading-tight">
-                  <h1 className="font-serif text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>AURA</h1>
-                  <p className="text-[10px] font-medium tracking-wide" style={{ color: 'var(--text-secondary)' }}>your wellness buddy</p>
+                  <h1 className="font-serif text-xl font-semibold text-[#5F554D]">Dori</h1>
+                  <p className="text-[10px] text-[#5F554D]/50 font-medium tracking-wide">your wellness buddy</p>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                {renderNavItem({ id: 'chat', icon: '💬', label: 'Companion Chat' })}
-                {renderNavItem({ id: 'breathing', icon: '🌬️', label: 'Breathing Exercise' })}
-                {renderNavItem({ id: 'journal', icon: '📓', label: 'Mood Journal' })}
+                <NavItem id="chat"      icon="💬" label="Companion Chat"    />
+                <NavItem id="breathing" icon="🌬️" label="Breathing Exercise" />
+                <NavItem id="journal"   icon="📓" label="Mood Journal"       />
                 <button
-                  onClick={() => onNavigate?.('insights')}
-                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 active:scale-[0.98]"
+                  onClick={() => { onNavigate?.('insights'); if (window.innerWidth < 768) setSidebarOpen(false); }}
+                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 hover:bg-[var(--bg-recent-item)] active:scale-[0.98]"
                   style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
                   <span>✨</span>
                   {sidebarOpen && <span>My Insights</span>}
                 </button>
                 <button
                   onClick={() => { handleStartNewChat(); setView('chat'); if (window.innerWidth < 768) setSidebarOpen(false); }}
-                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 active:scale-[0.98]"
-                  style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  className="w-full py-3 px-4 rounded-2xl font-medium text-sm transition-all flex items-center gap-3 text-[#5F554D]/70 hover:bg-white/70 active:scale-[0.98]"
                 >
                   <span>＋</span>
                   {sidebarOpen && <span>New Chat</span>}
@@ -2098,7 +2032,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
             </svg>
           </button>
           <span className="font-serif text-base" style={{ color: 'var(--text-primary)' }}>
-            {view === "chat" ? "Companion Chat" : view === "breathing" ? "Breathing Exercise" : "Mood Journal"}
+            {view === "chat" ? "Companion Chat" : view === "breathing" ? "Breathing Exercise" : view === "journal" ? "Mood Journal" : "Recent Chats"}
           </span>
           <div className="flex items-center gap-3">
             <Lantern darkMode={darkMode} onClick={toggleDarkMode} size={30} />
@@ -2111,31 +2045,43 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 {getInitials(user?.name)}
               </button>
               {profileOpen && (
-                <div className="absolute right-0 top-12 w-56 rounded-2xl shadow-lg z-50 overflow-hidden" style={{ background: 'var(--bg-menu)', border: '1px solid var(--menu-border)', animation: 'cardEntranceUp 0.2s ease-out' }}>
+                <div className="absolute right-0 top-12 w-56 rounded-2xl shadow-md z-50 overflow-hidden" style={{ background: 'var(--bg-recent-item)' }}>
                   <div className="px-4 py-3" style={{ background: 'var(--bg-sidebar)' }}>
                     <p className="font-serif font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{user?.name || 'Explorer'}</p>
                     <p className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--text-secondary)' }}>Mind Space Active ✦</p>
                   </div>
                   <div className="py-1.5">
-                    {[
-                      { action: () => { setProfileOpen(false); setChangePasswordOpen(true); }, icon: '🔑', label: 'Change Password' },
-                      { action: () => { setProfileOpen(false); setView('journal'); }, icon: '📓', label: 'Mood Journal' },
-                      { action: () => { setProfileOpen(false); setView('recentChats'); }, icon: '💬', label: 'Recent Chats' },
-                    ].map(item => (
-                      <button
-                        key={item.label}
-                        onClick={item.action}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all text-left"
-                        style={{ color: 'var(--text-primary)' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-sidebar-item-hover)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <span className="text-base">{item.icon}</span> {item.label}
-                      </button>
-                    ))}
+                    <button
+                      onClick={() => { setProfileOpen(false); setChangePasswordOpen(true); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <span className="text-base">🔑</span> Change Password
+                    </button>
+                    <button
+                      onClick={() => { setProfileOpen(false); setView('journal'); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <span className="text-base">📓</span> Mood Journal
+                    </button>
+                    <button
+                      onClick={() => { setProfileOpen(false); onNavigate?.('insights'); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <span className="text-base">✨</span> My Insights
+                    </button>
                   </div>
+                  <button
+                    onClick={() => { setProfileOpen(false); setView('recentChats'); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium hover:bg-[var(--bg-active-tab)] transition-colors text-left"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    <span className="text-base">🕓</span> Recent Chats
+                  </button>
 
-                  <div className="px-4 py-3" style={{ borderTop: '1px solid var(--menu-border)' }}>
+                  <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--bg-sidebar)' }}>
                     <button
                       onClick={() => toggleDarkMode()}
                       className="w-full flex items-center justify-between"
@@ -2158,16 +2104,8 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                     </p>
                   </div>
 
-                  <div className="py-1.5" style={{ borderTop: '1px solid var(--menu-border)' }}>
-                    <button
-                      onClick={() => { setProfileOpen(false); handleLogout(); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all text-left"
-                      style={{ color: 'var(--menu-danger)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--menu-danger-bg)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <span className="text-base">🚪</span> Leave Space
-                    </button>
+                  <div className="border-t py-1.5" style={{ borderColor: 'var(--bg-sidebar)' }}>
+                    <button onClick={() => { setProfileOpen(false); handleLogout(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-medium text-[#a04040] hover:bg-[#fff0ee] transition-colors text-left"><span className="text-base">🚪</span> Leave Space</button>
                   </div>
                 </div>
               )}
@@ -2216,7 +2154,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                     <div style={{ width:14, height:14, borderRadius:'50%', background:'#5F554D', opacity: 0.5 }} />
                   </div>
                 </div>
-                <p className="text-sm font-medium text-[#5F554D]/60 animate-pulse">AURA is stepping in!</p>
+                <p className="text-sm font-medium text-[#5F554D]/60 animate-pulse">Dori is stepping in!</p>
               </div>
             )}
 
@@ -2225,15 +2163,15 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 <div className="h-full flex flex-col items-center justify-center text-center gap-3 px-4">
                   <RabbitSVG phase="Exhale" size={88} />
                   <h2 className="text-2xl md:text-3xl font-serif font-semibold" style={{ color: 'var(--text-primary)' }}>{getGreeting(user?.name, sessions.length > 0)}</h2>
-                  <p className="text-sm font-medium max-w-xs" style={{ color: 'var(--text-secondary)' }}>How is your mind feeling today? AURA is here whenever you're ready.</p>
+                  <p className="text-sm font-medium max-w-xs" style={{ color: 'var(--text-secondary)' }}>How is your mind feeling today? Dori's here whenever you're ready.</p>
                 </div>
               ) : (
                 messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'} items-end gap-2`} style={{ animation: 'chatFadeIn 0.4s ease-out both' }}>
+                  <div key={msg.id} className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'} items-end gap-2`}>
                     {msg.isBot && <BuddyAvatar size={38} />}
                     <div className={`flex flex-col gap-2 max-w-[78%] md:max-w-[65%] ${msg.isBot ? 'items-start' : 'items-end'}`}>
                       <div
-                        className="p-4 rounded-3xl text-sm font-normal leading-relaxed shadow-sm transition-all duration-200"
+                        className="p-4 rounded-3xl text-sm font-normal leading-relaxed shadow-sm"
                         style={{
                           background: msg.isBot ? 'var(--bg-prompt-chip)' : 'var(--bg-active-tab)',
                           color: 'var(--text-primary)',
@@ -2245,21 +2183,25 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                       </div>
                       {msg.isBot && (
                         <div className="flex flex-wrap gap-1.5 pl-1">
-                          {msg.reaction !== null ? (
-                            /* Locked state: only show the selected reaction */
-                            <span
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border"
-                              style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)', borderColor: 'transparent', animation: 'reactionPop 0.4s ease-out' }}
-                            >
-                              <span>{msg.reaction}</span> {REACTION_OPTIONS.find(o => o.emoji === msg.reaction)?.label}
-                            </span>
+                          {msg.reaction ? (
+                            (() => {
+                              const chosen = REACTION_OPTIONS.find(opt => opt.emoji === msg.reaction);
+                              if (!chosen) return null;
+                              return (
+                                <span
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border cursor-default"
+                                  style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)', borderColor: 'transparent' }}
+                                >
+                                  <span>{chosen.emoji}</span> {chosen.label}
+                                </span>
+                              );
+                            })()
                           ) : (
-                            /* Unlocked state: show all reaction options */
                             REACTION_OPTIONS.map(({ emoji, label }) => (
                               <button
                                 key={emoji}
-                                onClick={() => handleReaction(msg.id, emoji)}
-                                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all active:scale-95 border hover:scale-105 hover:shadow-sm"
+                                onClick={() => handleReaction(msg.id, emoji, label)}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all active:scale-95 border"
                                 style={{ background: 'var(--bg-prompt-chip)', color: 'var(--text-secondary)', borderColor: 'var(--bg-sidebar)' }}
                               ><span>{emoji}</span> {label}</button>
                             ))
@@ -2287,26 +2229,26 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                   <button
                     key={prompt}
                     onClick={() => setInput(prompt)}
-                    className="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-medium transition-all active:scale-95 shadow-sm hover:scale-105 hover:shadow-md"
-                    style={{ background: 'var(--bg-prompt-chip)', color: 'var(--text-primary)', border: '1px solid var(--menu-border)' }}
+                    className="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-medium transition-all active:scale-95 shadow-sm"
+                    style={{ background: 'var(--bg-prompt-chip)', color: 'var(--text-primary)' }}
                   >{prompt}</button>
                 ))}
               </div>
             )}
 
             <form onSubmit={handleSendMessage} className="p-3 md:p-4 flex gap-2.5 items-end relative z-10" style={{ background: 'var(--bg-app)' }}>
-              <div className="aura-chat-input flex-1 flex items-end gap-2 rounded-3xl px-4 py-2.5 shadow-sm border transition-all" style={{ background: 'var(--bg-prompt-chip)', borderColor: 'var(--bg-active-tab)' }}>
+              <div className="dori-chat-input flex-1 flex items-end gap-2 rounded-3xl px-4 py-2.5 shadow-sm border transition-all" style={{ background: 'var(--bg-prompt-chip)', borderColor: 'var(--bg-active-tab)' }}>
                 <textarea
                   value={input}
                   onChange={(e) => { setInput(e.target.value); e.target.style.height='auto'; e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'; }}
                   onKeyDown={(e) => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
-                  placeholder="Tell AURA what's on your mind..."
+                  placeholder="Tell Dori what's on your mind..."
                   rows={1}
                   className="flex-1 bg-transparent outline-none font-normal text-sm transition-colors resize-none leading-relaxed"
                   style={{ minHeight:'24px', maxHeight:'120px', color: 'var(--text-primary)' }}
                 />
               </div>
-              <button type="submit" disabled={!input.trim() || isTyping} className="w-11 h-11 md:w-11 md:h-11 flex items-center justify-center disabled:opacity-40 font-semibold rounded-full shadow-sm active:scale-95 transition-all flex-shrink-0 hover:shadow-lg" style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)', ...(input.trim() && !isTyping ? { animation: 'glowPulse 2s ease-in-out infinite' } : {}) }} aria-label="Send">➤</button>
+              <button type="submit" disabled={!input.trim() || isTyping} className="w-11 h-11 flex items-center justify-center disabled:opacity-40 font-semibold rounded-full shadow-sm active:scale-95 transition-all flex-shrink-0" style={{ background: 'var(--bg-active-tab)', color: 'var(--text-primary)' }} aria-label="Send">➤</button>
             </form>
           </div>
         )}
@@ -2326,10 +2268,10 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                   Guided Grounding
                 </span>
                 <h2 className="text-2xl md:text-3xl font-serif font-semibold mt-3 transition-colors duration-300" style={{ color: 'var(--text-primary)' }}>
-                  Box Breathing
+                  4 · 2 · 6 Breathing
                 </h2>
                 <p className="text-sm mt-1 font-medium transition-colors duration-300" style={{ color: 'var(--text-secondary)' }}>
-                  Follow the rabbit. 4 counts each phase.
+                  Follow the rabbit. Inhale 4 · Hold 2 · Exhale 6.
                 </p>
               </div>
 
@@ -2340,7 +2282,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                     borderColor: phaseColors[breathPhase]?.text || 'var(--text-primary)',
                     opacity: breathActive ? (breathPhase === 'Hold' ? 0.4 : 0.15) : 0.1,
                     transform: `scale(${breathActive ? breathScale * 1.2 : 1})`,
-                    transition: breathPhase === 'Hold' ? 'opacity 0.5s ease' : 'transform 4s linear, opacity 0.5s ease',
+                    transition: breathPhase === 'Hold' ? 'opacity 0.5s ease' : `transform ${phaseDurations[breathPhase]}s linear, opacity 0.5s ease`,
                   }}
                 />
                 <div
@@ -2351,7 +2293,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                     boxShadow: '0 8px 24px rgba(95,85,77,0.12)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transform: `scale(${breathActive ? breathScale : 1})`,
-                    transition: breathPhase === 'Hold' ? 'background-color 0.3s ease' : 'transform 4s linear, background-color 0.3s ease',
+                    transition: breathPhase === 'Hold' ? 'background-color 0.3s ease' : `transform ${phaseDurations[breathPhase]}s linear, background-color 0.3s ease`,
                     position: 'relative', zIndex: 10,
                   }}
                 >
@@ -2365,7 +2307,13 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                     {phaseColors[breathPhase]?.label}
                   </p>
                   <div className="w-full rounded-full h-2 overflow-hidden transition-colors duration-300" style={{ background: 'var(--bg-sidebar)' }}>
-                    <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${((4 - counter + 1) / 4) * 100}%`, background: phaseColors[breathPhase]?.text }} />
+                    <div
+                      className="h-full rounded-full transition-all duration-1000"
+                      style={{
+                        width: `${((phaseDurations[breathPhase] - counter + 1) / phaseDurations[breathPhase]) * 100}%`,
+                        background: phaseColors[breathPhase]?.text,
+                      }}
+                    />
                   </div>
                   <div className="flex items-center justify-center gap-4">
                     <div
@@ -2400,9 +2348,15 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 </button>
                 {breathActive && (
                   <button
-                    onClick={() => { setBreathActive(false); setBreathPhase('Inhale'); setBreathScale(1.0); setCounter(4); setCycleCount(0); }}
+                    onClick={() => {
+                      setBreathActive(false);
+                      setBreathPhase('Inhale');
+                      setBreathScale(1.0);
+                      setCounter(phaseDurations['Inhale']);
+                      setCycleCount(0);
+                    }}
                     className="px-5 py-3 font-semibold text-xs uppercase tracking-wider rounded-full shadow-sm transition-all active:scale-95"
-                    style={{ background: 'var(--bg-recent-item)', color: 'var(--text-primary)' }}
+                    style={{ background: 'var(--bg-recent-item)', color: 'var(--text-secondary)' }}
                   >
                     Reset
                   </button>
@@ -2410,7 +2364,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
               </div>
               <button
                 onClick={() => setView('chat')}
-                className="text-xs font-medium underline underline-offset-2 transition-colors hover:opacity-70"
+                className="text-xs font-medium underline underline-offset-2 transition-colors hover:opacity-80"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 Return to chat
@@ -2438,9 +2392,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         <ChangePasswordModal user={user} onClose={() => setChangePasswordOpen(false)} />
       )}
 
-      {/* ── Session conflict dialog ──────────────────────────────────────────
-          Shown when another tab (same browser) or another device has an active
-          session. The user chooses whether to take over or yield.               */}
+      {/* ── Session conflict dialog ── */}
       {sessionConflict && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center p-6"
@@ -2459,7 +2411,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 Already Open Elsewhere
               </h3>
               <p className="text-sm text-[#5F554D]/65 leading-relaxed">
-                AURA is already open in another window or device. Would you like to
+                Dori is already open in another window or device. Would you like to
                 continue here and close that one?
               </p>
             </div>
@@ -2469,7 +2421,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
                 className="w-full py-3.5 rounded-2xl font-bold text-sm tracking-wide transition-all active:scale-[0.98] shadow-sm"
                 style={{ background: '#5F554D', color: 'white' }}
               >
-                Yes, use AURA here
+                Yes, use Dori here
               </button>
               <button
                 onClick={handleStayInOther}
@@ -2483,8 +2435,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
         </div>
       )}
 
-      {/* ── Session displaced overlay ────────────────────────────────────────
-          Shown when another tab/device took over and ended this session.        */}
+      {/* ── Session displaced overlay ── */}
       {sessionDisplaced && (
         <div
           className="fixed inset-0 z-[90] flex items-center justify-center p-6"
@@ -2498,7 +2449,7 @@ export default function Dashboard({ user, onLogout, onNavigate }) {
               Session Ended
             </h3>
             <p className="text-sm text-[#5F554D]/65 leading-relaxed mb-8">
-              AURA was opened on another device, so this session has ended
+              Dori was opened on another device, so this session has ended
               peacefully. You can log back in whenever you're ready.
             </p>
             <button

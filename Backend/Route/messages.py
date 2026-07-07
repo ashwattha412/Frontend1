@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, HTTPException
-from Schema.Schema import MessageCreate,MessageUpdate
+from Schema.Schema import MessageCreate, MessageUpdate, MessageReaction
 from Database.Supabase import supabase
 
 
@@ -89,4 +89,19 @@ def delete(message_id: int):
 
     return {
         "message": "Deleted successfully"
+    }
+@router.patch('/{message_id}/reaction')
+def set_reaction(message_id: int, payload: MessageReaction):
+
+    updated = supabase.table('message_table') \
+        .update({'reaction': payload.reaction}) \
+        .eq('id', message_id) \
+        .execute()
+
+    if not updated.data:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    return {
+        "message": "Reaction updated successfully",
+        "data": updated.data[0]
     }

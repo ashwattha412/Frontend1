@@ -48,6 +48,46 @@ class ChatRequest(BaseModel):
     user_id: int
     content: str
 
+class ChatReactRequest(BaseModel):
+    session_id: int
+    user_id: int
+    message_id: int
+    message_content: str
+    emoji: str
+    label: str
+
+
+@app.post("/chat/react")
+def chat_react(req: ChatReactRequest):
+    session = supabase.table("session_table").select("user_id").eq("id", req.session_id).execute()
+    if not session.data:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.data[0]["user_id"] != req.user_id:
+        raise HTTPException(status_code=403, detail="Session does not belong to user")
+
+    # Not a real user utterance — a synthetic note so AURA (which keeps its
+    # own conversation memory per aura_session_id) reacts in-context to the
+    # specific earlier message, instead of treating this as a new topic.
+    reaction_note = (
+        f'[The user just reacted with {req.emoji} ("{req.label}") to this '
+        f'message you sent earlier: "{req.message_content}". '
+        f'Respond with a brief, warm one-line acknowledgment — do not '
+        f'repeat or summarize the original message.]'
+    )
+
+    bot_reply = _call_aura(reaction_note, req.session_id, req.user_id)
+
+    try:
+        supabase.table("message_table").insert({
+            "session_id": req.session_id,
+            "user_id": req.user_id,
+            "sender": "bot",
+            "content": bot_reply["response"],
+        }).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save reaction reply: {exc}") from exc
+
+    return {"reply": bot_reply["response"]}
 
 def _call_aura(message: str, session_id: int, user_id: int) -> dict:
     aura_session_id = f"user_{user_id}_session_{session_id}"

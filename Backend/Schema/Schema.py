@@ -46,7 +46,9 @@ class MessageCreate(BaseModel):
 class MessageUpdate(BaseModel):
     content: str
 
-
+class MessageReaction(BaseModel):
+    reaction: Optional[str] = None
+    
 class JournalEntryCreate(BaseModel):
     user_id: int
     session_id: Optional[int] = None
