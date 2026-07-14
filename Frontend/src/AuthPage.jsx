@@ -201,7 +201,6 @@ function AuraIllustration() {
 
 function Nav({ darkMode, toggleDarkMode }) {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 24);
@@ -240,7 +239,7 @@ function Nav({ darkMode, toggleDarkMode }) {
             <button
               key={item.label}
               onClick={() => scrollToSection(item.id)}
-              className="px-4 py-2 rounded-full text-sm text-[#5A4A46] bg-white/55 hover:bg-[#F5EEC8]/80 shadow-[0_2px_10px_rgba(0,0,0,0.07),0_1px_3px_rgba(180,130,120,0.1)] transition-all duration-200 hover:shadow-[0_4px_16px_rgba(0,0,0,0.1)] cursor-pointer"
+              className="px-4 py-2 rounded-full text-sm text-[var(--auth-text-secondary)] bg-[var(--auth-surface)] hover:bg-[var(--auth-chip-warm-bg)] shadow-[0_2px_10px_rgba(0,0,0,0.07),0_1px_3px_rgba(180,130,120,0.1)] transition-all duration-200 hover:shadow-[0_4px_16px_rgba(0,0,0,0.1)] cursor-pointer"
               style={sans}
             >
               {item.label}
@@ -248,7 +247,7 @@ function Nav({ darkMode, toggleDarkMode }) {
           ))}
         </div>
 
-        {/* Primary CTA */}
+        {/* Theme toggle */}
         <button
           onClick={toggleDarkMode}
           className="auth-theme-toggle mr-2 flex-shrink-0"
@@ -256,6 +255,8 @@ function Nav({ darkMode, toggleDarkMode }) {
         >
           {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
+
+        {/* Primary CTA */}
         <button
           onClick={scrollToAuth}
           className="flex items-center gap-2 px-4 md:px-5 py-2.5 auth-primary-btn rounded-full text-sm font-medium shadow-md transition-all duration-300 cursor-pointer flex-shrink-0"
@@ -344,7 +345,7 @@ function Hero() {
               className="flex items-center gap-2.5 text-[var(--auth-text-secondary)] hover:text-[var(--auth-text-primary)] transition-colors duration-200 text-sm cursor-pointer"
               style={sans}
             >
-              <span className="w-9 h-9 rounded-full border border-[#C4847A]/30 bg-white/60 flex items-center justify-center shadow-[0_2px_10px_rgba(0,0,0,0.06)]">
+              <span className="w-9 h-9 rounded-full border border-[#C4847A]/30 bg-[var(--auth-surface)] flex items-center justify-center shadow-[0_2px_10px_rgba(0,0,0,0.06)]">
                 <Sparkles className="w-4 h-4 text-[#C4847A]" strokeWidth={1.5} />
               </span>
               See how it works
@@ -369,10 +370,10 @@ function Hero() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.7 }}
-            className="absolute top-[18%] -left-6 bg-white/80 backdrop-blur-lg rounded-2xl px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.09)] border border-[var(--auth-border)]"
+            className="absolute top-[18%] -left-6 bg-[var(--auth-surface)] backdrop-blur-lg rounded-2xl px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.09)] border border-[var(--auth-border)]"
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-[#F5EEC8] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-[var(--auth-chip-warm-bg)] flex items-center justify-center">
                 <Heart className="w-4 h-4 text-[#C4847A]" strokeWidth={1.5} />
               </div>
               <div>
@@ -387,10 +388,10 @@ function Hero() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.85 }}
-            className="absolute bottom-[22%] -right-5 bg-white/80 backdrop-blur-lg rounded-2xl px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.09)] border border-[var(--auth-border)]"
+            className="absolute bottom-[22%] -right-5 bg-[var(--auth-surface)] backdrop-blur-lg rounded-2xl px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.09)] border border-[var(--auth-border)]"
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-[#EAF0E8] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-[var(--auth-chip-green-bg)] flex items-center justify-center">
                 <MessageCircle className="w-4 h-4 text-[#8FAD88]" strokeWidth={1.5} />
               </div>
               <div>
@@ -414,25 +415,25 @@ const FEATURES = [
     icon: Heart,
     title: "Empathetic Listening",
     desc: "AURA reads emotional cues in your words and tone, responding with warmth and genuine understanding — never scripted, always present.",
-    iconColor: "#C4847A",
-    iconBg: "rgba(196,132,122,0.12)",
-    cardBg: "#F5EEC8",
+    iconColor: "var(--auth-feature-1-icon)",
+    iconBg: "var(--auth-feature-1-bg)",
+    cardBg: "var(--auth-feature-1-card)",
   },
   {
     icon: Brain,
     title: "Adaptive Intelligence",
     desc: "Every conversation refines AURA's model of you — your patterns, your triggers, and the small things that bring you back to calm.",
-    iconColor: "#8FAD88",
-    iconBg: "rgba(143,173,136,0.14)",
-    cardBg: "#EAF0E8",
+    iconColor: "var(--auth-feature-2-icon)",
+    iconBg: "var(--auth-feature-2-bg)",
+    cardBg: "var(--auth-feature-2-card)",
   },
   {
     icon: Shield,
     title: "Private by Design",
     desc: "Your thoughts stay yours. End-to-end encryption and zero data retention mean the most vulnerable parts of you are never commodified.",
-    iconColor: "#D4895A",
-    iconBg: "rgba(212,137,90,0.12)",
-    cardBg: "#F9EEE4",
+    iconColor: "var(--auth-feature-3-icon)",
+    iconBg: "var(--auth-feature-3-bg)",
+    cardBg: "var(--auth-feature-3-card)",
   },
 ];
 
@@ -574,7 +575,7 @@ function Quote() {
             For the first time in years, I felt truly heard.
           </blockquote>
           <div className="flex items-center justify-center gap-3.5">
-            <div className="w-11 h-11 rounded-full bg-[#F5EEC8] flex items-center justify-center shadow-[0_2px_12px_rgba(196,132,122,0.18)]">
+            <div className="w-11 h-11 rounded-full bg-[var(--auth-chip-warm-bg)] flex items-center justify-center shadow-[0_2px_12px_rgba(196,132,122,0.18)]">
               <span className="text-sm font-semibold text-[#C4847A]" style={serif}>
                 M
               </span>
@@ -740,9 +741,9 @@ function AuthSection({ onLoginSuccess }) {
     }
   };
 
-  /* ── Shared input style ── */
-  const inputClass = "w-full px-5 py-3.5 border border-[rgba(180,150,140,0.25)] rounded-2xl text-base bg-white text-[var(--auth-text-primary)] focus:outline-none focus:ring-2 focus:ring-[#C4847A]/40 placeholder:text-[var(--auth-text-muted)] transition-all duration-200";
-  const inputClassSm = "w-full px-4 py-3 border border-[rgba(180,150,140,0.25)] rounded-2xl text-sm bg-white text-[var(--auth-text-primary)] focus:outline-none focus:ring-2 focus:ring-[#C4847A]/40 placeholder:text-[var(--auth-text-muted)] transition-all duration-200";
+  /* ── Shared input style — themed via CSS vars instead of hardcoded white ── */
+  const inputClass = "w-full px-5 py-3.5 border border-[var(--auth-input-border)] rounded-2xl text-base bg-[var(--auth-input-bg)] text-[var(--auth-text-primary)] focus:outline-none focus:ring-2 focus:ring-[#C4847A]/40 placeholder:text-[var(--auth-text-muted)] transition-all duration-200";
+  const inputClassSm = "w-full px-4 py-3 border border-[var(--auth-input-border)] rounded-2xl text-sm bg-[var(--auth-input-bg)] text-[var(--auth-text-primary)] focus:outline-none focus:ring-2 focus:ring-[#C4847A]/40 placeholder:text-[var(--auth-text-muted)] transition-all duration-200";
 
   return (
     <section id="auth-section" className="py-20 px-8 md:px-14 lg:px-20">
@@ -752,7 +753,7 @@ function AuthSection({ onLoginSuccess }) {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-          className="relative rounded-[2.25rem] bg-[var(--auth-primary)] overflow-hidden"
+          className="relative rounded-[2.25rem] bg-[var(--auth-cta-bg)] overflow-hidden"
         >
           {/* Decorative circles */}
           <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full bg-white/[0.07] pointer-events-none" />
@@ -763,29 +764,30 @@ function AuthSection({ onLoginSuccess }) {
 
             {/* Left: CTA messaging */}
             <div className="flex flex-col justify-center">
-              <p className="text-[11px] font-medium text-white/55 tracking-[0.15em] uppercase mb-5" style={sans}>
+              <p className="text-[11px] font-medium text-[var(--auth-cta-text)]/55 tracking-[0.15em] uppercase mb-5" style={sans}>
                 Begin Today
               </p>
-              <h2 className="text-4xl md:text-5xl text-[#FAF8F3] leading-[1.12] font-light mb-6" style={serif}>
+              <h2 className="text-4xl md:text-5xl text-[var(--auth-cta-text)] leading-[1.12] font-light mb-6" style={serif}>
                 Begin your journey toward{" "}
                 <em style={{ fontStyle: "italic" }}>emotional clarity</em>
               </h2>
-              <p className="text-[#FAF8F3]/72 mb-8 text-lg leading-[1.72]" style={{ ...sans, fontWeight: 300 }}>
+              <p className="text-[var(--auth-cta-text)]/72 mb-8 text-lg leading-[1.72]" style={{ ...sans, fontWeight: 300 }}>
                 Join people discovering what it means to be genuinely understood.
               </p>
             </div>
 
-            {/* Right: Auth form */}
-            <div className="bg-[var(--auth-bg)] rounded-[1.75rem] p-8 md:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.15)]">
+            {/* Right: Auth form — uses --auth-card-bg so it lifts subtly off the dark
+                background instead of blending into it or staying stark white */}
+            <div className="bg-[var(--auth-card-bg)] rounded-[1.75rem] p-8 md:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.15)]">
 
               {/* Tab toggle */}
-              <div className="flex bg-[#EDE8DF] p-1 rounded-xl mb-8">
+              <div className="flex bg-[var(--auth-tab-bg)] p-1 rounded-xl mb-8">
                 <button
                   type="button"
                   onClick={() => setActiveTab('login')}
                   className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer ${
                     activeTab === 'login'
-                      ? 'bg-white text-[var(--auth-text-primary)] shadow-sm'
+                      ? 'bg-[var(--auth-surface-solid)] text-[var(--auth-text-primary)] shadow-sm'
                       : 'text-[var(--auth-text-muted)] hover:text-[var(--auth-text-secondary)]'
                   }`}
                   style={sans}
@@ -797,7 +799,7 @@ function AuthSection({ onLoginSuccess }) {
                   onClick={() => setActiveTab('signup')}
                   className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer ${
                     activeTab === 'signup'
-                      ? 'bg-white text-[var(--auth-text-primary)] shadow-sm'
+                      ? 'bg-[var(--auth-surface-solid)] text-[var(--auth-text-primary)] shadow-sm'
                       : 'text-[var(--auth-text-muted)] hover:text-[var(--auth-text-secondary)]'
                   }`}
                   style={sans}
@@ -819,12 +821,12 @@ function AuthSection({ onLoginSuccess }) {
                   </div>
 
                   {/* Email / Phone toggle */}
-                  <div className="flex bg-[#EDE8DF] p-0.5 rounded-lg max-w-[180px]">
+                  <div className="flex bg-[var(--auth-tab-bg)] p-0.5 rounded-lg max-w-[180px]">
                     <button
                       type="button"
                       onClick={() => setLoginMethod('email')}
                       className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                        loginMethod === 'email' ? 'bg-white text-[var(--auth-text-primary)] shadow-sm' : 'text-[var(--auth-text-muted)]'
+                        loginMethod === 'email' ? 'bg-[var(--auth-surface-solid)] text-[var(--auth-text-primary)] shadow-sm' : 'text-[var(--auth-text-muted)]'
                       }`}
                       style={sans}
                     >
@@ -834,7 +836,7 @@ function AuthSection({ onLoginSuccess }) {
                       type="button"
                       onClick={() => setLoginMethod('phone')}
                       className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                        loginMethod === 'phone' ? 'bg-white text-[var(--auth-text-primary)] shadow-sm' : 'text-[var(--auth-text-muted)]'
+                        loginMethod === 'phone' ? 'bg-[var(--auth-surface-solid)] text-[var(--auth-text-primary)] shadow-sm' : 'text-[var(--auth-text-muted)]'
                       }`}
                       style={sans}
                     >
@@ -1053,7 +1055,7 @@ function Footer() {
           transition={{ duration: 0.7, ease: "easeInOut" }}
           className="flex flex-col items-center gap-1"
         >
-          <div className="w-9 h-9 rounded-full border border-[#C4847A]/28 bg-white/50 flex items-center justify-center shadow-[0_2px_10px_rgba(196,132,122,0.1)]">
+          <div className="w-9 h-9 rounded-full border border-[#C4847A]/28 bg-[var(--auth-surface)] flex items-center justify-center shadow-[0_2px_10px_rgba(196,132,122,0.1)]">
             <Brain className="w-4 h-4 text-[#C4847A]/55" strokeWidth={1.5} />
           </div>
           <div className="flex flex-col items-center gap-0.5 mt-0.5">

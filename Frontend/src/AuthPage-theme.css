@@ -10,7 +10,144 @@
   
   --auth-card-bg: #FFFFFF;
   --auth-input-bg: #FAF7F2;
+  --auth-b/* AuthPage-theme.css */
+:root {
+  --auth-bg: #FAF8F3;
+  --auth-text-primary: #3A2E2A;
+  --auth-text-secondary: #7A6A64;
+  --auth-text-muted: #9A8A84;
+
+  --auth-primary: #C4847A;
+  --auth-primary-hover: #B8675E;
+
+  /* NEW: dedicated bg for the big CTA/auth box, separate from button color */
+  --auth-cta-bg: #C4847A;
+  --auth-cta-text: #FAF8F3;
+
+  --auth-card-bg: #FFFFFF;
+  --auth-input-bg: #FAF7F2;
+  --auth-input-border: rgba(196, 132, 122, 0.25);
   --auth-border: rgba(196, 132, 122, 0.15);
+  --auth-border-light: rgba(196, 132, 122, 0.08);
+
+  /* NEW: surfaces used by nav pills / floating cards / tabs */
+  --auth-surface: rgba(255, 255, 255, 0.7);
+  --auth-surface-solid: #FFFFFF;
+  --auth-tab-bg: rgba(196, 132, 122, 0.08);
+  --auth-chip-warm-bg: rgba(196, 132, 122, 0.14);
+  --auth-chip-green-bg: rgba(143, 173, 136, 0.16);
+
+  --auth-feature-1-icon: #C4847A;
+  --auth-feature-1-bg: rgba(196,132,122,0.12);
+  --auth-feature-1-card: #F5EEC8;
+
+  --auth-feature-2-icon: #8FAD88;
+  --auth-feature-2-bg: rgba(143,173,136,0.14);
+  --auth-feature-2-card: #EAF0E8;
+
+  --auth-feature-3-icon: #D4895A;
+  --auth-feature-3-bg: rgba(212,137,90,0.12);
+  --auth-feature-3-card: #F9EEE4;
+
+  --auth-nav-bg: rgba(250, 248, 243, 0.88);
+}
+
+[data-theme="dark"] {
+  --auth-bg: #0A0F1A;
+  --auth-text-primary: #F0F4F8;
+  --auth-text-secondary: #A0ABC0;
+  --auth-text-muted: #718096;
+
+  --auth-primary: #D4A49E;
+  --auth-primary-hover: #E2B2AC;
+
+  /* NEW: CTA box now goes properly dark instead of staying pink */
+  --auth-cta-bg: #241A22;
+  --auth-cta-text: #F5E9E6;
+
+  --auth-card-bg: rgba(255, 255, 255, 0.03);
+  --auth-input-bg: rgba(0, 0, 0, 0.2);
+  --auth-input-border: rgba(212, 164, 158, 0.22);
+  --auth-border: rgba(212, 164, 158, 0.15);
+  --auth-border-light: rgba(255, 255, 255, 0.05);
+
+  /* NEW: dark-mode surfaces */
+  --auth-surface: rgba(255, 255, 255, 0.05);
+  --auth-surface-solid: #1A2233;
+  --auth-tab-bg: rgba(255, 255, 255, 0.04);
+  --auth-chip-warm-bg: rgba(212, 164, 158, 0.16);
+  --auth-chip-green-bg: rgba(163, 201, 159, 0.16);
+
+  --auth-feature-1-icon: #D4A49E;
+  --auth-feature-1-bg: rgba(212, 164, 158, 0.15);
+  --auth-feature-1-card: rgba(255, 255, 255, 0.04);
+
+  --auth-feature-2-icon: #A3C99F;
+  --auth-feature-2-bg: rgba(163, 201, 159, 0.15);
+  --auth-feature-2-card: rgba(255, 255, 255, 0.04);
+
+  --auth-feature-3-icon: #E5A376;
+  --auth-feature-3-bg: rgba(229, 163, 118, 0.15);
+  --auth-feature-3-card: rgba(255, 255, 255, 0.04);
+
+  --auth-nav-bg: rgba(10, 15, 26, 0.85);
+}
+
+.auth-page-container {
+  background-color: var(--auth-bg);
+  color: var(--auth-text-primary);
+  transition: background-color 0.4s ease, color 0.4s ease;
+}
+
+.auth-nav {
+  transition: background-color 0.4s ease;
+}
+.auth-nav.scrolled {
+  background-color: var(--auth-nav-bg);
+}
+
+.auth-feature-card {
+  transition: transform 0.35s ease, box-shadow 0.35s ease, background-color 0.4s ease;
+}
+
+.auth-primary-btn {
+  background-color: var(--auth-primary);
+  color: #FFF;
+  transition: all 0.3s ease;
+}
+.auth-primary-btn:hover {
+  background-color: var(--auth-primary-hover);
+}
+
+.auth-input {
+  background-color: var(--auth-input-bg);
+  color: var(--auth-text-primary);
+  border: 1px solid var(--auth-border);
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.4s;
+}
+.auth-input:focus {
+  border-color: var(--auth-primary);
+}
+
+.auth-theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--auth-card-bg);
+  border: 1px solid var(--auth-border);
+  color: var(--auth-text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.auth-theme-toggle:hover {
+  transform: scale(1.05);
+}
+.auth-theme-toggle:active {
+  transform: scale(0.95);
+}order: rgba(196, 132, 122, 0.15);
   --auth-border-light: rgba(196, 132, 122, 0.08);
   
   --auth-feature-1-icon: #C4847A;
