@@ -609,6 +609,18 @@ function AuthSection({ onLoginSuccess }) {
   const [signupData, setSignupData] = useState({ name: '', email: '', phone: '', age: '', password: '' });
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // Forgot password flow: 'signin' -> 'forgot-email' -> 'forgot-otp' -> back to 'signin'
+  const [loginView, setLoginView] = useState('signin');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  // Signup flow: 'form' -> 'pending-verification' (stays here, no auto-redirect to login)
+  const [signupView, setSignupView] = useState('form');
+  const [resendLoading, setResendLoading] = useState(false);
+
   const validateEmailFormat = (emailStr) => /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(emailStr);
 
   const handlePhoneInputChange = (val, targetForm) => {
@@ -695,6 +707,60 @@ function AuthSection({ onLoginSuccess }) {
     }
   };
 
+  const handleForgotPasswordRequest = async (e) => {
+    e.preventDefault();
+    if (!validateEmailFormat(forgotEmail)) { alert("❌ Please enter a valid email."); return; }
+    setForgotLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(`🔴 ${formatApiError(data.detail)}`);
+        return;
+      }
+      alert("📧 If that email is registered, a code has been sent.");
+      setLoginView('forgot-otp');
+    } catch (err) {
+      alert(`🔴 Unexpected error: ${err.message}`);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!otpCode || otpCode.length !== 6) { alert("❌ Enter the 6-digit code from your email."); return; }
+    if (newPassword.length < 6) { alert("❌ Password must be at least 6 characters."); return; }
+    if (newPassword !== confirmNewPassword) { alert("❌ Passwords do not match."); return; }
+    setForgotLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/auth/reset-password-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail, otp: otpCode, new_password: newPassword })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(`🔴 ${formatApiError(data.detail)}`);
+        return;
+      }
+      alert("✅ Password reset! Please sign in with your new password.");
+      setLoginView('signin');
+      setOtpCode('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setForgotEmail('');
+    } catch (err) {
+      alert(`🔴 Unexpected error: ${err.message}`);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   const handleSignupSubmit = async (e) => {
     e.preventDefault();
     const parsedAge = parseInt(signupData.age, 10);
@@ -733,11 +799,32 @@ function AuthSection({ onLoginSuccess }) {
         return;
       }
 
-      alert(`✅ Account created successfully! Please log in. 👋`);
-      setActiveTab('login');
+      setSignupView('pending-verification');
     } catch (err) {
       alert(`🔴 Unexpected error: ${err.message}`);
       console.error("Signup error:", err);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!signupData.email) return;
+    setResendLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: signupData.email })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(`🔴 ${formatApiError(data.detail)}`);
+        return;
+      }
+      alert("📧 If that email is registered and unverified, a new link has been sent.");
+    } catch (err) {
+      alert(`🔴 Unexpected error: ${err.message}`);
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -796,7 +883,10 @@ function AuthSection({ onLoginSuccess }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('signup')}
+                  onClick={() => {
+                    setSignupView('form');
+                    setActiveTab('signup');
+                  }}
                   className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer ${
                     activeTab === 'signup'
                       ? 'bg-[var(--auth-surface-solid)] text-[var(--auth-text-primary)] shadow-sm'
@@ -808,7 +898,7 @@ function AuthSection({ onLoginSuccess }) {
                 </button>
               </div>
 
-              {activeTab === 'login' ? (
+              {activeTab === 'login' && loginView === 'signin' ? (
                 /* ── LOGIN FORM ── */
                 <div className="space-y-5">
                   <div>
@@ -873,6 +963,21 @@ function AuthSection({ onLoginSuccess }) {
                       className={inputClass}
                       style={sans}
                     />
+
+                    <div className="flex justify-end -mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotEmail(loginMethod === 'email' ? loginData.email : '');
+                          setLoginView('forgot-email');
+                        }}
+                        className="text-xs text-[#C4847A] font-medium hover:text-[#B8675E] transition-colors cursor-pointer"
+                        style={sans}
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+
                     <button
                       type="submit"
                       disabled={isLoggingIn}
@@ -894,6 +999,153 @@ function AuthSection({ onLoginSuccess }) {
                         Create an account
                       </button>
                     </p>
+                  </div>
+                </div>
+              ) : activeTab === 'login' && loginView === 'forgot-email' ? (
+                /* ── FORGOT PASSWORD: STEP 1, ENTER EMAIL ── */
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-[var(--auth-text-primary)] tracking-tight mb-1" style={serif}>
+                      Reset your password
+                    </h3>
+                    <p className="text-sm text-[var(--auth-text-muted)]" style={{ ...sans, fontWeight: 300 }}>
+                      Enter your email and we'll send you a 6-digit code.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
+                    <input
+                      type="text"
+                      placeholder="Email Address"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className={inputClass}
+                      style={sans}
+                    />
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="w-full py-4 bg-[var(--auth-primary)] hover:bg-[var(--auth-primary-hover)] disabled:opacity-60 disabled:cursor-not-allowed text-[#FAF8F3] font-semibold rounded-2xl shadow-[0_6px_20px_rgba(196,132,122,0.38)] hover:shadow-[0_10px_28px_rgba(196,132,122,0.5)] transition-all duration-300 text-base cursor-pointer"
+                      style={sans}
+                    >
+                      {forgotLoading ? 'Sending code...' : 'Send Code'}
+                    </button>
+                  </form>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setLoginView('signin')}
+                      className="text-sm text-[var(--auth-text-muted)] hover:text-[var(--auth-text-primary)] transition-colors cursor-pointer"
+                      style={sans}
+                    >
+                      ← Back to sign in
+                    </button>
+                  </div>
+                </div>
+              ) : activeTab === 'login' && loginView === 'forgot-otp' ? (
+                /* ── FORGOT PASSWORD: STEP 2, ENTER CODE + NEW PASSWORD ── */
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-[var(--auth-text-primary)] tracking-tight mb-1" style={serif}>
+                      Enter your code
+                    </h3>
+                    <p className="text-sm text-[var(--auth-text-muted)]" style={{ ...sans, fontWeight: 300 }}>
+                      We sent a 6-digit code to {forgotEmail || 'your email'}.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleResetPassword} className="space-y-4">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="6-Digit Code"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className={inputClass}
+                      style={sans}
+                    />
+                    <input
+                      type="password"
+                      placeholder="New Password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className={inputClass}
+                      style={sans}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Confirm New Password"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      className={inputClass}
+                      style={sans}
+                    />
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="w-full py-4 bg-[var(--auth-primary)] hover:bg-[var(--auth-primary-hover)] disabled:opacity-60 disabled:cursor-not-allowed text-[#FAF8F3] font-semibold rounded-2xl shadow-[0_6px_20px_rgba(196,132,122,0.38)] hover:shadow-[0_10px_28px_rgba(196,132,122,0.5)] transition-all duration-300 text-base cursor-pointer"
+                      style={sans}
+                    >
+                      {forgotLoading ? 'Resetting...' : 'Reset Password'}
+                    </button>
+                  </form>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setLoginView('forgot-email')}
+                      className="text-sm text-[var(--auth-text-muted)] hover:text-[var(--auth-text-primary)] transition-colors cursor-pointer"
+                      style={sans}
+                    >
+                      ← Change email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLoginView('signin')}
+                      className="text-sm text-[var(--auth-text-muted)] hover:text-[var(--auth-text-primary)] transition-colors cursor-pointer"
+                      style={sans}
+                    >
+                      Back to sign in
+                    </button>
+                  </div>
+                </div>
+              ) : activeTab === 'signup' && signupView === 'pending-verification' ? (
+                /* ── SIGNUP: CHECK YOUR EMAIL ── */
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-[var(--auth-text-primary)] tracking-tight mb-1" style={serif}>
+                      Verify your email
+                    </h3>
+                    <p className="text-sm text-[var(--auth-text-muted)] leading-relaxed" style={{ ...sans, fontWeight: 300 }}>
+                      We sent a verification link to <span className="font-medium text-[var(--auth-text-secondary)]">{signupData.email}</span>.
+                      You'll need to click it before you can sign in.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={resendLoading}
+                    className="w-full py-3.5 bg-[var(--auth-primary)] hover:bg-[var(--auth-primary-hover)] disabled:opacity-60 disabled:cursor-not-allowed text-[#FAF8F3] font-semibold rounded-2xl shadow-[0_6px_20px_rgba(196,132,122,0.38)] hover:shadow-[0_10px_28px_rgba(196,132,122,0.5)] transition-all duration-300 text-sm cursor-pointer"
+                    style={sans}
+                  >
+                    {resendLoading ? 'Resending...' : 'Resend verification email'}
+                  </button>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSignupView('form');
+                        setActiveTab('login');
+                      }}
+                      className="text-sm text-[var(--auth-text-muted)] hover:text-[var(--auth-text-primary)] transition-colors cursor-pointer"
+                      style={sans}
+                    >
+                      ← Back to sign in
+                    </button>
                   </div>
                 </div>
               ) : (

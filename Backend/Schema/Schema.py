@@ -58,3 +58,14 @@ class JournalEntryCreate(BaseModel):
 class JournalEntryUpdate(BaseModel):
     user_id: int
     content: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
+    
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr

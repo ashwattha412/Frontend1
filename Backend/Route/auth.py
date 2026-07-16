@@ -3,32 +3,194 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import bcrypt
+import secrets
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException
-from Schema.Schema import SignUpRequest, SignInRequest, ChangePasswordRequest
+from fastapi.responses import HTMLResponse
+from Schema.Schema import SignUpRequest, SignInRequest, ChangePasswordRequest, ResendVerificationRequest
 from Database.Supabase import supabase
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 HEARTBEAT_STALE_SECONDS = 45
 
+VERIFICATION_TOKEN_HOURS = 24
+
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "AURA")
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
+
+
+def _send_verification_email(to_email: str, token: str):
+    verify_link = f"{BACKEND_PUBLIC_URL}/auth/verify-email?token={token}"
+    subject = "Verify your AURA account"
+    body = (
+        f"Welcome to AURA!\n\n"
+        f"Please confirm this is your email address by clicking the link below:\n"
+        f"{verify_link}\n\n"
+        f"This link expires in {VERIFICATION_TOKEN_HOURS} hours. "
+        f"If you didn't create this account, you can safely ignore this email."
+    )
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
+    msg["To"] = to_email
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+
 
 @router.post("/signup")
 def signup(user: SignUpRequest):
-    existing = supabase.table("registration_table") \
-        .select("*") \
-        .or_(f"email.eq.{user.email},phone.eq.{user.phone}") \
-        .execute()
-    if existing.data:
-        raise HTTPException(status_code=400, detail="User already exists")
+    existing_by_email = supabase.table("registration_table").select("*").eq("email", user.email).execute()
+    existing_by_phone = supabase.table("registration_table").select("*").eq("phone", user.phone).execute()
+
+    email_row = existing_by_email.data[0] if existing_by_email.data else None
+    phone_row = existing_by_phone.data[0] if existing_by_phone.data else None
+
+    # A verified account already owns this email -> hard block
+    if email_row and email_row.get("is_verified"):
+        raise HTTPException(status_code=400, detail="An account with this email already exists. Please log in.")
+
+    # A verified account already owns this phone (and it isn't the same account as the email match) -> hard block
+    if phone_row and phone_row.get("is_verified") and (not email_row or phone_row["id"] != email_row["id"]):
+        raise HTTPException(status_code=400, detail="An account with this phone number already exists. Please log in.")
+
+    # Email and phone belong to two DIFFERENT unverified accounts -> ambiguous, don't silently merge or overwrite either
+    if email_row and phone_row and email_row["id"] != phone_row["id"]:
+        raise HTTPException(
+            status_code=400,
+            detail="This email and phone number belong to two different pending signups. "
+                    "Please use a matching email and phone, or try resending verification for one of them."
+        )
+
+    existing_row = email_row or phone_row  # if set, this is the SAME unverified account for both fields
+
     hashed_pwd = bcrypt.hashpw(user.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    token = secrets.token_urlsafe(32)
+    token_expires = (datetime.now(timezone.utc) + timedelta(hours=VERIFICATION_TOKEN_HOURS)).isoformat()
+
+    if existing_row:
+        # An unverified account with this exact email+phone already exists (e.g. they
+        # never clicked the link, or the 24h window expired). Refresh their details
+        # and send a brand new verification link instead of permanently blocking them.
+        supabase.table("registration_table").update({
+            "name": user.name,
+            "phone": user.phone,
+            "age": user.age,
+            "password": hashed_pwd,
+            "profession": user.profession,
+            "verification_token": token,
+            "verification_token_expires": token_expires,
+        }).eq("id", existing_row["id"]).execute()
+
+        try:
+            _send_verification_email(user.email, token)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=201,
+                detail=f"Details updated, but verification email failed to send: {exc}"
+            )
+
+        return {
+            "message": "An unverified account with this email already existed — we've sent a new verification link.",
+            "user_id": existing_row["id"]
+        }
+
     result = supabase.table("registration_table").insert({
         "name": user.name, "email": user.email, "phone": user.phone,
-        "age": user.age, "password": hashed_pwd, "profession": user.profession
+        "age": user.age, "password": hashed_pwd, "profession": user.profession,
+        "is_verified": False,
+        "verification_token": token,
+        "verification_token_expires": token_expires,
     }).execute()
     if not result.data:
         raise HTTPException(status_code=400, detail="Failed to create user")
-    return {"message": "Signup successful", "user_id": result.data[0]["id"]}
+
+    try:
+        _send_verification_email(user.email, token)
+    except Exception as exc:
+        # Account is created either way — surface the email problem separately
+        # so the frontend can tell the user their account exists but the
+        # verification email failed to send.
+        raise HTTPException(
+            status_code=201,
+            detail=f"Account created, but verification email failed to send: {exc}"
+        )
+
+    return {
+        "message": "Signup successful. Please check your email to verify your account.",
+        "user_id": result.data[0]["id"]
+    }
+
+
+@router.get("/verify-email", response_class=HTMLResponse)
+def verify_email(token: str):
+    result = supabase.table("registration_table") \
+        .select("id, verification_token_expires, is_verified") \
+        .eq("verification_token", token) \
+        .execute()
+
+    if not result.data:
+        return HTMLResponse("<h2>Invalid or already-used verification link.</h2>", status_code=400)
+
+    db_user = result.data[0]
+
+    if db_user["is_verified"]:
+        return HTMLResponse("<h2>Your email is already verified. You can log in.</h2>")
+
+    expires_at = datetime.fromisoformat(db_user["verification_token_expires"])
+    if expires_at < datetime.now(timezone.utc):
+        return HTMLResponse(
+            "<h2>This verification link has expired. Please request a new one from the sign-in page.</h2>",
+            status_code=400
+        )
+
+    supabase.table("registration_table").update({
+        "is_verified": True,
+        "verification_token": None,
+        "verification_token_expires": None,
+    }).eq("id", db_user["id"]).execute()
+
+    return HTMLResponse("<h2>✅ Your email has been verified! You can now close this tab and log in.</h2>")
+
+
+@router.post("/resend-verification")
+def resend_verification(payload: ResendVerificationRequest):
+    result = supabase.table("registration_table") \
+        .select("id, is_verified") \
+        .eq("email", payload.email) \
+        .execute()
+
+    # Don't reveal whether the email exists
+    if not result.data:
+        return {"message": "If that email is registered and unverified, a new link has been sent."}
+
+    db_user = result.data[0]
+    if db_user["is_verified"]:
+        return {"message": "If that email is registered and unverified, a new link has been sent."}
+
+    token = secrets.token_urlsafe(32)
+    token_expires = (datetime.now(timezone.utc) + timedelta(hours=VERIFICATION_TOKEN_HOURS)).isoformat()
+
+    supabase.table("registration_table").update({
+        "verification_token": token,
+        "verification_token_expires": token_expires,
+    }).eq("id", db_user["id"]).execute()
+
+    try:
+        _send_verification_email(payload.email, token)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {exc}") from exc
+
+    return {"message": "If that email is registered and unverified, a new link has been sent."}
 
 
 @router.post("/signin")
@@ -42,6 +204,12 @@ def signin(user: SignInRequest):
     db_user = result.data[0]
     if not bcrypt.checkpw(user.password.encode("utf-8"), db_user["password"].encode("utf-8")):
         raise HTTPException(status_code=401, detail="Wrong password")
+
+    if not db_user.get("is_verified", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email before signing in. Check your inbox for the verification link."
+        )
 
     log_id = None
     try:

@@ -11,8 +11,8 @@ from Route.messages import router as messages_router
 from Route.journal import router as journals_router
 from Route.analytics import router as analytics_router
 from Database.Supabase import supabase
+from Route.password_reset import router as password_reset_router
 
-load_dotenv(override=True)
 
 AURA_URL = os.getenv("AURA_URL", "https://mayank214-aura.hf.space/generate")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
@@ -36,7 +36,7 @@ app.include_router(sessions_router)
 app.include_router(messages_router)
 app.include_router(journals_router)
 app.include_router(analytics_router)
-
+app.include_router(password_reset_router)
 
 @app.get("/")
 def home():
