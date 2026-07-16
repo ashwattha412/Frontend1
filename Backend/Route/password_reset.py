@@ -1,7 +1,5 @@
 import os
 import random
-import smtplib
-from email.mime.text import MIMEText
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, HTTPException
@@ -9,16 +7,11 @@ import bcrypt
 
 from Schema.Schema import ForgotPasswordRequest, ResetPasswordRequest
 from Database.Supabase import supabase
+from Utils.email_utils import send_email
 
 router = APIRouter(prefix="/auth", tags=["Password Reset"])
 
 OTP_EXPIRY_MINUTES = 10
-
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")       # your Gmail address
-SMTP_PASS = os.getenv("SMTP_PASS")       # Gmail App Password (not your login password)
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "AURA")
 
 
 def _send_otp_email(to_email: str, otp: str):
@@ -28,15 +21,7 @@ def _send_otp_email(to_email: str, otp: str):
         f"This code expires in {OTP_EXPIRY_MINUTES} minutes. "
         f"If you didn't request this, you can safely ignore this email."
     )
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
-    msg["To"] = to_email
-
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+    send_email(to_email, subject, body)
 
 
 @router.post("/forgot-password")

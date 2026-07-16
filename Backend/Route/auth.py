@@ -4,13 +4,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import bcrypt
 import secrets
-import smtplib
-from email.mime.text import MIMEText
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from Schema.Schema import SignUpRequest, SignInRequest, ChangePasswordRequest, ResendVerificationRequest
 from Database.Supabase import supabase
+from Utils.email_utils import send_email
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -18,11 +17,6 @@ HEARTBEAT_STALE_SECONDS = 45
 
 VERIFICATION_TOKEN_HOURS = 24
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASS = os.getenv("SMTP_PASS")
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "AURA")
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
 
 
@@ -36,15 +30,7 @@ def _send_verification_email(to_email: str, token: str):
         f"This link expires in {VERIFICATION_TOKEN_HOURS} hours. "
         f"If you didn't create this account, you can safely ignore this email."
     )
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
-    msg["To"] = to_email
-
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(SMTP_USER, [to_email], msg.as_string())
+    send_email(to_email, subject, body)
 
 
 @router.post("/signup")
